@@ -8,6 +8,8 @@ import { norm } from './util.js';
 
 const TO_BASE = { szt: ['szt', 1], kg: ['kg', 1], g: ['kg', 0.001], l: ['l', 1], ml: ['l', 0.001] };
 export const UNITS = ['szt', 'kg', 'g', 'l', 'ml'];
+// Oferta z niepotwierdzonym odczytem: nie pokazujemy z niej żadnych liczb pochodnych i nie porównujemy jej.
+export const isSure = o => o.conf !== 'check';
 
 export function offerCalc(o) {
   const [base, f] = TO_BASE[o.unit] || ['szt', 1];
@@ -83,7 +85,7 @@ export function familyOf(name) {
 export function compareGroups(offers, today) {
   const map = new Map();
   for (const o of offers) {
-    if (o.until < today) continue;
+    if (o.until < today || !isSure(o)) continue;
     const fam = familyOf(o.name); if (!fam) continue;
     const c = offerCalc(o), key = fam.id + '|' + c.base;
     if (!map.has(key)) map.set(key, { id: key, fam, base: c.base, rows: [] });
@@ -167,6 +169,7 @@ export function unitPrice(o, force) {
 // Oznaczenie promocji dokładnie tak, jak w sklepie: "3 za 2", "3 za 9,99 zł", "2. produkt −50%". Brak dla zwykłej ceny.
 export function promoLabel(o, fmtMoney) {
   const need = Math.max(1, Math.round(o.need || 1));
+  if (o.promo) return o.promo; // napis dokładnie taki, jak w sklepie
   if (o.mode === 'bundle' && need > 1) return o.pay && o.pay < need ? `${need} za ${o.pay}` : `${need} za ${fmtMoney(o.price)}`;
   if (o.mode === 'nth' && need > 1) return o.pct >= 100 ? `${need}. produkt gratis` : `${need}. produkt −${numFmt(o.pct)}%`;
   return '';
@@ -176,5 +179,9 @@ export function whereLabel(o) {
   if (o.store === 'Lidl') return o.page ? `gazetka Lidl, str. ${o.page}` : 'gazetka Lidl';
   if (o.section) return `dział „${o.section}”`;
   return '';
+}
+// Adres strony gazetki Lidla, żeby można było sprawdzić ofertę na źródle.
+export function flyerUrl(o) {
+  return o.store === 'Lidl' && o.page && o.section ? `https://www.lidl.pl/l/pl/gazetki/${encodeURIComponent(o.section)}/view/flyer/page/${o.page}` : '';
 }
 export const isMulti = o => (o.mode === 'bundle' || o.mode === 'nth') && Math.round(o.need || 1) > 1;

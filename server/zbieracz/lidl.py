@@ -1,4 +1,4 @@
-"""Lidl: gazetki z publicznego JSON platformy gazetek + odczyt obrazów stron przez Gemini (z weryfikacją kodem)."""
+"""Lidl: gazetki z publicznego JSON platformy gazetek. Gemini tylko PRZEPISUJE tekst ze stron; wszystkie liczby liczy i sprawdza normalize.interpret."""
 import hashlib
 import json
 import os
@@ -6,16 +6,26 @@ import re
 
 import gemini
 from gemini import Reader
-from normalize import apply_multibuy, make_offer, money, parse_base_price, parse_multibuy, parse_pack, verify, verify_any
+from normalize import interpret, make_offer, money
 
 LIST_URL = 'https://www.lidl.pl/c/nasze-gazetki/s10008614'
 API = 'https://endpoints.leaflets.schwarz/v4/flyer?flyer_identifier={slug}&region_id=0&region_code=0'
 # domyślnie tylko gazetki spożywcze (katalogi, zabawki, alkohole mocne pomijamy)
 DEFAULT_ONLY = r'^gazetka(?!.*katalog)'
 
-PROMPT = """Odczytaj ze zdjęcia strony gazetki Lidl WSZYSTKIE oferty spożywcze i drogeryjne. Zwróć wyłącznie JSON:
-{"oferty":[{"nazwa":string,"marka":string|null,"opakowanie":string|null,"cena":number,"cena_przed":number|null,"cena_jednostkowa":string|null,"komplet_ilosc":number|null,"komplet_platnych":number|null,"komplet_cena":number|null,"kolejna_taniej_proc":number|null,"promocja":string|null,"warunek":string|null}]}
-Zasady: przepisuj tylko to, co jest WYDRUKOWANE; nie zgaduj i nie licz. "cena" = cena promocyjna jednego opakowania w zł (liczba z kropką). "opakowanie" = gramatura lub pojemność dokładnie jak na stronie (np. "2 x 1,5 l", "500 g"). "cena_jednostkowa" = tekst ceny za kg/l/szt jak wydrukowano (np. "1 kg = 9,98"). Promocje wielosztukowe: "N za X zł" -> komplet_ilosc=N, komplet_cena=X; "3 w cenie 2" / "3 za 2" / "2+1 gratis" / "kup 2, trzecia gratis" -> komplet_ilosc=3 (ile sztuk dostajesz), komplet_platnych=2 (za ile płacisz), a "cena" to cena JEDNEJ sztuki. "promocja" = napis promocji dokładnie jak wydrukowano (np. "3 za 2", "2+1 gratis"), albo null. Gdy "drugi/trzeci produkt X% taniej" wpisz kolejna_taniej_proc=X. "warunek" = np. "z aplikacją Lidl Plus", "limit 6 szt.". Pomiń ceny rabatu bez nazwy produktu, artykuły nie-spożywcze i nie-drogeryjne oraz reklamy. Gdy na stronie nie ma ofert zwróć {"oferty":[]}."""
+FIELDS = '{"nazwa":string,"marka":string|null,"opakowanie":string|null,"cena":string,"cena_dodatkowa":string|null,"cena_przed":string|null,"cena_jednostkowa":string|null,"kaucja":string|null,"promocja":string|null,"warunek":string|null}'
+PROMPT = """Jesteś czytnikiem tekstu (OCR). Przepisz ze zdjęcia strony gazetki Lidl WSZYSTKIE oferty spożywcze i drogeryjne. Zwróć wyłącznie JSON:
+{"oferty":[""" + FIELDS + """]}
+Zasady: przepisuj znak w znak to, co jest WYDRUKOWANE. Niczego nie licz, nie mnóż, nie przeliczaj, nie zgaduj i nie poprawiaj. Czego nie ma na stronie, to null. Każde pole to tekst z danego bloku oferty:
+"opakowanie" = napis o ilości w całości, razem ze słowem takim jak Dwusztuk, np. "Dwusztuk 2 x 1 L", "500 g".
+"cena" = największa wydrukowana cena oferty, np. "9,98".
+"cena_dodatkowa" = pozostałe wydrukowane ceny bloku, np. "2 x 4,99 zł za butelkę", "cena poza promocją 10,15 zł/but.".
+"cena_przed" = cena przekreślona lub sprzed obniżki.
+"cena_jednostkowa" = napis ceny za kg/l/szt bez kaucji, np. "1 L = 4,99".
+"kaucja" = napis o kaucji, np. "kaucja 1,00 zł".
+"promocja" = napis promocji dokładnie jak wydrukowano, np. "2 + 1 gratis", "3 za 2", "3 za 9,99 zł", "drugi produkt -50%".
+"warunek" = warunki, np. "aktywuj kupon w aplikacji Lidl Plus", "limit 6 szt.", "miksuj dowolnie".
+Pomiń ceny rabatu bez nazwy produktu, artykuły nie-spożywcze i nie-drogeryjne oraz reklamy. Gdy na stronie nie ma ofert zwróć {"oferty":[]}."""
 
 
 def list_flyers(page, only=DEFAULT_ONLY):
@@ -38,59 +48,36 @@ def get_flyer(ctx, slug):
 
 
 def map_item(it, valid_from, valid_to, section=''):
-    """Jedna pozycja z odczytu -> oferta (albo None). Cała arytmetyka i kontrola jest tutaj, nie w modelu."""
-    price = money(it.get('cena'))
+    """Jedna pozycja dosłownego odczytu -> oferta (albo None). Cała arytmetyka i kontrola jest w normalize.interpret."""
     name = ' '.join(x for x in [(it.get('marka') or '').strip(), (it.get('nazwa') or '').strip()] if x)
-    if not name or not price or price <= 0:
+    if not name:
         return None
-    pack = parse_pack(it.get('opakowanie') or '') or parse_pack(name)
-    note = ''
-    cond = (it.get('warunek') or '').strip()
-    kn, kp, kc = it.get('komplet_ilosc'), it.get('komplet_platnych'), money(it.get('komplet_cena'))
-    mb = None
-    if isinstance(kn, (int, float)) and kn >= 2 and isinstance(kp, (int, float)) and 1 <= kp < kn:
-        mb = {'need': int(kn), 'pay': int(kp)}
-    elif isinstance(kn, (int, float)) and kn >= 2 and kc:
-        mb = {'need': int(kn), 'total': kc}
-    elif isinstance(it.get('kolejna_taniej_proc'), (int, float)) and 0 < it['kolejna_taniej_proc'] <= 100:
-        mb = {'need': 2, 'pct': float(it['kolejna_taniej_proc'])}
-    else:
-        mb = parse_multibuy(it.get('promocja') or '')
-    if not pack:
-        pack = dict(amount=1.0, unit='szt', conf='check', note='')
-    raw = (it.get('cena_jednostkowa') or '').lower().replace('zł', '').replace('pln', '').strip()
-    raw = re.sub(r'^(\d+(?:[.,]\d+)?)?\s*(kg|g|ml|l|szt)\.?\s*=\s*', lambda m: f"{m.group(1) or 1} {m.group(2)} ", raw)
+    pack_t, extra, unit_t = [str(it.get(k) or '').strip() for k in ('opakowanie', 'cena_dodatkowa', 'cena_jednostkowa')]
+    r = interpret(name, pack_t, it.get('cena'), extra, unit_t, it.get('kaucja') or '', it.get('promocja') or '')
+    if not r:
+        return None
     old = money(it.get('cena_przed')) or 0
-    if mb:
-        # możliwe ceny jednej sztuki: zwykła (cena) albo promocyjna; wystarczy, że jedna zgadza się z ceną jednostkową ze strony
-        cands = [price]
-        if 'total' in mb:
-            cands.append(round(mb['total'] / mb['need']))
-        if 'pay' in mb:
-            cands.append(round(price * mb['pay'] / mb['need']))
-        if 'pct' in mb:
-            cands.append(round(price * (1 - mb['pct'] / 100)))
-        conf, note = verify_any(cands, pack, raw)
-    elif not parse_base_price(raw):
-        conf, note = 'check', 'brak ceny jednostkowej, by potwierdzić odczyt'
-    else:
-        conf, note = verify(price, pack, raw)
-    o = make_offer('Lidl', name, pack, price, old if old > price and not mb else 0, valid_from, valid_to, cond=cond, section=section, src='leaflet',
-                   conf=conf, note=note, brand=(it.get('marka') or '').strip())
-    if mb:
-        apply_multibuy(o, mb, price)
-        o['promo'] = (it.get('promocja') or '').strip()[:40]
+    pack = dict(amount=r['amount'], unit=r['unit'])
+    o = make_offer('Lidl', name, pack, r['price'], old if old > r['price'] and r['need'] == 1 else 0, valid_from, valid_to,
+                   cond=(it.get('warunek') or '').strip(), section=section, src='leaflet', conf=r['conf'], note=r['note'], brand=(it.get('marka') or '').strip())
+    o['mode'], o['need'] = r['mode'], r['need']
+    for k in ('pay', 'pct'):
+        if k in r:
+            o[k] = r[k]
+    if r['promo']:
+        o['promo'] = r['promo']
+    if r['deposit']:
+        o['deposit'] = r['deposit']
+    o['printed'] = ' · '.join(x for x in [pack_t, extra, unit_t] if x)[:140]
     return o
-
 
 
 def _batch_prompt():
     rules = 'Zasady:' + PROMPT.split('Zasady:', 1)[1]
-    return ('Odczytaj ze zdjęć kolejnych stron gazetki Lidl (obrazy są w kolejności 1, 2, 3...) WSZYSTKIE oferty spożywcze i drogeryjne. Zwróć wyłącznie JSON:\n'
+    return ('Jesteś czytnikiem tekstu (OCR). Przepisz ze zdjęć kolejnych stron gazetki Lidl (obrazy są w kolejności 1, 2, 3...) WSZYSTKIE oferty spożywcze i drogeryjne. Zwróć wyłącznie JSON:\n'
             '{"strony":[{"numer":1,"oferty":[...]},{"numer":2,"oferty":[...]}]}\n'
             'gdzie "numer" to kolejność obrazu w tej wiadomości, a każda oferta ma pola:\n'
-            '{"nazwa":string,"marka":string|null,"opakowanie":string|null,"cena":number,"cena_przed":number|null,"cena_jednostkowa":string|null,"komplet_ilosc":number|null,"komplet_platnych":number|null,"komplet_cena":number|null,"kolejna_taniej_proc":number|null,"promocja":string|null,"warunek":string|null}\n'
-            + rules)
+            + FIELDS + '\n' + rules)
 
 
 def collect(page, ctx, key, cache_dir, max_pages=140, only=DEFAULT_ONLY, log=print, batch=None):
@@ -110,7 +97,7 @@ def collect(page, ctx, key, cache_dir, max_pages=140, only=DEFAULT_ONLY, log=pri
             img = p.get('image')
             if not img:
                 continue
-            ck = os.path.join(cache_dir, hashlib.sha1((slug + '|' + img + '|v2').encode()).hexdigest() + '.json')
+            ck = os.path.join(cache_dir, hashlib.sha1((slug + '|' + img + '|v3').encode()).hexdigest() + '.json')
             if os.path.exists(ck):
                 with open(ck, encoding='utf-8') as f:
                     items_by_page[p.get('number')] = json.load(f)

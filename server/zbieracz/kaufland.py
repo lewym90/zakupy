@@ -3,7 +3,7 @@ Nie omijamy żadnych zabezpieczeń: jeśli strona pokaże wyzwanie/blokadę, ko�
 import datetime as dt
 import re
 
-from normalize import apply_multibuy, make_offer, money, parse_multibuy, parse_pack, parse_valid, verify
+from normalize import apply_multibuy, make_offer, money, parse_base_price, parse_multibuy, parse_pack, parse_pack_parts, parse_valid, verify
 
 URL_CURRENT = 'https://sklep.kaufland.pl/oferta/przeglad.html?kloffer-week=current'
 URL_NEXT = 'https://sklep.kaufland.pl/oferta/przeglad.html?kloffer-week=next'
@@ -64,8 +64,13 @@ def parse_rows(rows, today=None):
         mb = parse_multibuy(' | '.join([disc, pack_t, sub, brand, full]))
         if mb:
             apply_multibuy(o, mb, price)
+            parts = parse_pack_parts(pack_t)
+            if parts and parts['count'] == mb['need']:  # „3 x 1,5 l” i „3 za 9,99 zł”: ilość kompletu jest już w tekście, nie mnożymy drugi raz
+                o['amount'] = parts['each']
             o['promo'] = disc or ''
-            o['conf'], o['note'] = 'check', 'promocja wielosztukowa wykryta w opisie oferty: potwierdź warunki i cenę na stronie sklepu'
+            # pewne tylko wtedy, gdy promocja jest w etykiecie ceny, a cena zgadza się z ceną za jednostkę ze strony sklepu
+            if not (conf == 'ok' and parse_base_price(base_t) and parse_multibuy(disc or '')):
+                o['conf'], o['note'] = 'check', 'promocja wielosztukowa wykryta w opisie oferty: potwierdź warunki i cenę na stronie sklepu'
             o['old'] = 0
         offers.append(o)
     return offers, warns

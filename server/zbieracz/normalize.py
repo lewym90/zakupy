@@ -177,14 +177,147 @@ def apply_multibuy(o, mb, single_price):
     return o
 
 
-def verify_any(prices, pack, base_text):
-    """Jak verify, ale wystarczy, że zgodna jest którakolwiek z możliwych cen jednej sztuki (zwykła albo promocyjna)."""
-    last = ('check', 'brak ceny jednostkowej, by potwierdzić odczyt')
-    for pr in prices:
-        if not pr:
-            continue
-        r = verify(pr, pack, base_text)
-        if r[0] == 'ok':
-            return r if base_text and parse_base_price(base_text) else ('check', 'brak ceny jednostkowej, by potwierdzić odczyt')
-        last = r
-    return last
+# ---------- Interpretacja dosłownego odczytu (Gemini tylko czyta, liczy wyłącznie ten kod) ----------
+TOL = 0.02  # zgodność z ceną jednostkową wydrukowaną w gazetce
+_WORDS = {'dwu': 2, 'trzy': 3, 'cztero': 4, 'pięcio': 5, 'piecio': 5, 'sześcio': 6, 'szescio': 6, 'ośmio': 8, 'osmio': 8, 'dziesięcio': 10, 'dziesiecio': 10, 'dwunasto': 12}
+_WORD_RE = re.compile(r'\b(' + '|'.join(_WORDS) + r')(?:sztuk\w*|pak\w*)', re.I)
+_KAUCJA_RE = re.compile(r'\+?\s*(?:\+\s*)?kaucj\w*\s*[:=]?\s*' + NUM + r'\s*(?:zł|zl|pln)?', re.I)
+_LINE_RE = re.compile(r'(\d{1,2})\s*[x×*]\s*(\d+(?:[.,]\d{1,2})?)(?!\s*(?:kg|g|ml|l|szt)\b)', re.I)
+
+
+def parse_pack_parts(text):
+    """Opakowanie -> {count, each, unit, conf, note, word}. Tylko rozkłada tekst; nie mnoży niczego drugi raz.
+    'Dwusztuk 2 x 1 L' -> 2 sztuki po 1 l; '500 g' -> 1 sztuka po 500 g."""
+    t = re.sub(r'\s+', ' ', (text or '').lower().replace('\u00a0', ' ').replace('×', 'x').replace('*', 'x')).strip()
+    w = _WORD_RE.search(t)
+    word = w.group(0) if w else ''
+    m = re.search(r'(\d+)\s*x\s*' + NUM + r'\s*(kg|g|ml|l)\b', t)
+    if m:
+        return dict(count=int(m.group(1)), each=fnum(m.group(2)), unit=m.group(3), conf='ok', note='', word=word)
+    p = parse_pack(t)
+    if not p:
+        return None
+    return dict(count=_WORDS[w.group(1)] if w else 1, each=p['amount'], unit=p['unit'], conf=p['conf'], note=p['note'], word=word)
+
+
+def parse_anchor(text):
+    """Cena jednostkowa z gazetki -> {base, up (grosze za kg/l/szt), deposit (grosze|None)} albo None. Kaucja jest osobna i nie wchodzi do ceny.
+    '1 L = 4,99 + kaucja 1,00 zł' -> l, 499, 100."""
+    t = (text or '').lower().replace('\u00a0', ' ')
+    k = _KAUCJA_RE.search(t)
+    deposit = int(round(fnum(k.group(1)) * 100)) if k else None
+    t = _KAUCJA_RE.sub(' ', t).replace('zł', ' ').replace('zl', ' ').replace('pln', ' ')
+    m = re.search(NUM + r'\s*/\s*' + NUM + r'?\s*(kg|g|ml|l|szt)\b', t)  # 4,99/1 l
+    if m and re.search(r'/\s*\d*\s*(kg|g|ml|l|szt)\b', t):
+        price, n, u = fnum(m.group(1)), fnum(m.group(2)) if m.group(2) else 1.0, m.group(3)
+    else:
+        if '/' in t:
+            return None  # kilka wariantów
+        m = re.search(NUM + r'?\s*(kg|g|ml|l|szt)\b\.?\s*=?\s*' + NUM, t)
+        if not m:
+            return None
+        n, u, price = fnum(m.group(1)) if m.group(1) else 1.0, m.group(2), fnum(m.group(3))
+    b, f = TO_BASE[u]
+    return dict(base=b, up=price * 100 / (n * f), deposit=deposit)
+
+
+def _prices(text):
+    t = _KAUCJA_RE.sub(' ', str(text if text is not None else ''))
+    t = re.sub(r'\d+(?:[.,]\d+)?\s*(?:kg|g|ml|l|szt)\b\.?\s*=?\s*\d+(?:[.,]\d+)?', ' ', t, flags=re.I)  # 1 L = 4,99
+    return [int(round(fnum(x) * 100)) for x in re.findall(r'\d+[.,]\d{1,2}', t)]
+
+
+def _line(*texts):
+    """'4 x 7,99 zł za butelkę' -> (4, 799)."""
+    for t in texts:
+        m = _LINE_RE.search(_KAUCJA_RE.sub(' ', str(t or '')))
+        if m and int(m.group(1)) >= 2:
+            return int(m.group(1)), int(round(fnum(m.group(2)) * 100))
+    return None
+
+
+def _near(a, b, tol=TOL):
+    return b > 0 and abs(a - b) / b <= tol
+
+
+def _dedupe(xs):
+    return list(dict.fromkeys(x for x in xs if x))
+
+
+def interpret(name, pack_text, price, extra='', unit_text='', deposit='', promo=''):
+    """Dosłowne teksty oferty -> dokładnie jedna interpretacja albo oznaczenie 'check'.
+    Układamy możliwe odczytania i wybieramy to, które zgadza się z ceną jednostkową WYDRUKOWANĄ w gazetce.
+    Gdy nic się nie zgadza, nie wolno podać liczb pochodnych: wynik to zwykła cena z conf='check'.
+    Zwraca None, gdy nie ma ceny."""
+    line = _line(price, extra)
+    prs = _prices(price)
+    big = max(prs) if prs else money(price)
+    if line and not prs:
+        big = line[0] * line[1]
+    if not big or big <= 0:
+        return None
+    anchor = parse_anchor(unit_text) or parse_anchor(extra)
+    dep = money(deposit) if deposit else None
+    if dep is None and anchor:
+        dep = anchor['deposit']
+    if dep is None:
+        k = _KAUCJA_RE.search(str(extra or ''))
+        dep = int(round(fnum(k.group(1)) * 100)) if k else 0
+    parts = parse_pack_parts(pack_text) or parse_pack_parts(name)
+    if not parts and anchor and _near(big, anchor['up']):  # towar na wagę: cena za 1 kg / 1 l
+        parts = dict(count=1, each=1.0, unit={'kg': 'kg', 'l': 'l', 'szt': 'szt'}[anchor['base']], conf='ok', note='', word='')
+    if not parts:
+        return dict(amount=1.0, unit='szt', price=big, mode='unit', need=1, conf='check', note='nie rozpoznano opakowania', deposit=dep, promo=(promo or '').strip()[:40])
+    count, each, unit = parts['count'], parts['each'], parts['unit']
+    q = count * each
+    base, f = TO_BASE[unit]
+    mb = parse_multibuy(promo or '')
+    singles = _dedupe([line[1] if line else 0, *prs, *_prices(extra), big])
+    hyps = []
+
+    def hyp(need, amount, total, mode='bundle', pay=0, pct=0, tests=None):
+        hyps.append(dict(need=need, amount=amount, total=int(round(total)), mode=mode, pay=pay, pct=pct,
+                         tests=tests if tests is not None else [total / (need * amount * f)]))
+    if mb and 'pay' in mb:
+        for s in singles:
+            hyp(mb['need'], q, s * mb['pay'], pay=mb['pay'], tests=[s / (q * f), s * mb['pay'] / (mb['need'] * q * f)])
+    elif mb and 'total' in mb and mb['total']:
+        need, x = mb['need'], mb['total']
+        for a in _dedupe([each if count == need else q, q / need if count == 1 else 0]):
+            hyp(need, a, x, tests=[x / (need * a * f)] + [s / (a * f) for s in singles if s != x])
+    elif mb and 'pct' in mb:
+        for s in singles:
+            hyp(mb['need'], q, s, mode='nth', pct=mb['pct'], tests=[s / (q * f), s * (1 - mb['pct'] / 100) / (q * f)])
+    else:
+        n = count if count > 1 else (line[0] if line else 1)
+        if n > 1:
+            real_set = bool(line or parts['word'])  # „Dwusztuk”, „2 x 4,99 za butelkę”: kupujesz komplet
+            if not real_set:
+                hyp(1, q, big, mode='unit')  # „4 x 125 g” za 3,99: jedno opakowanie zbiorcze
+            for a in _dedupe([each, q / n if count == 1 else 0]):
+                # big * n tylko bez wydrukowanej linii „N x cena”; przy niej ilość kompletu byłaby liczona podwójnie
+                for t in _dedupe([line[0] * line[1], big] if line else [big, big * n]):
+                    hyp(n, a, t)
+        else:
+            hyp(1, q, big, mode='unit')
+
+    chosen, note = None, ''
+    if parts['conf'] != 'ok':
+        note = parts['note']
+    elif anchor and anchor['base'] == base:
+        chosen = next((h for h in hyps if any(_near(v, anchor['up']) for v in h['tests'])), None)
+        if not chosen:
+            note = f"cena za jednostkę wg sklepu {anchor['up'] / 100:.2f}, odczyt jej nie potwierdza"
+    elif line and _near(line[0] * line[1], big, 0.002):  # brak ceny jednostkowej, ale druk zgadza się sam ze sobą: 2 x 4,99 = 9,98
+        chosen = next((h for h in hyps if h['need'] == line[0] and h['total'] == big), None)
+    if not chosen and not note:
+        note = 'brak ceny jednostkowej, by potwierdzić odczyt'
+    label = (promo or '').strip() or parts['word'].capitalize()
+    if not chosen:
+        return dict(amount=q, unit=unit, price=big, mode='unit', need=1, conf='check', note=note, deposit=dep, promo=label[:40])
+    r = dict(amount=chosen['amount'], unit=unit, price=chosen['total'], mode=chosen['mode'], need=chosen['need'], conf='ok', note='', deposit=dep, promo=label[:40] if chosen['need'] > 1 else '')
+    if chosen['pay']:
+        r['pay'] = chosen['pay']
+    if chosen['pct']:
+        r['pct'] = chosen['pct']
+    return r

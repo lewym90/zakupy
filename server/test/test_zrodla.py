@@ -63,11 +63,11 @@ class Kaufland(unittest.TestCase):
 
 class Lidl(unittest.TestCase):
     ITEMS = {'oferty': [
-        {'nazwa': 'Parówki z szynki', 'marka': 'Pikok', 'opakowanie': '300 g', 'cena': 6.99, 'cena_przed': 9.99, 'cena_jednostkowa': '1 kg = 23,30', 'komplet_ilosc': None, 'komplet_cena': None, 'kolejna_taniej_proc': None, 'warunek': None},
-        {'nazwa': 'Napój Coca-Cola', 'marka': None, 'opakowanie': '1,5 l', 'cena': 3.33, 'cena_przed': None, 'cena_jednostkowa': '1 l = 2,22', 'komplet_ilosc': 3, 'komplet_cena': 9.99, 'kolejna_taniej_proc': None, 'warunek': 'z Lidl Plus'},
-        {'nazwa': 'Ser Gouda', 'marka': 'Pilos', 'opakowanie': '300 g', 'cena': 11.39, 'cena_przed': None, 'cena_jednostkowa': '1 kg = 99,99', 'komplet_ilosc': None, 'komplet_cena': None, 'kolejna_taniej_proc': None, 'warunek': None},  # zły odczyt: cena jedn. się nie zgadza
-        {'nazwa': 'Jogurt', 'marka': None, 'opakowanie': '150 g', 'cena': 1.99, 'cena_przed': None, 'cena_jednostkowa': None, 'komplet_ilosc': None, 'komplet_cena': None, 'kolejna_taniej_proc': 50, 'warunek': None},
-        {'nazwa': '', 'marka': None, 'opakowanie': None, 'cena': 5, 'cena_przed': None, 'cena_jednostkowa': None, 'komplet_ilosc': None, 'komplet_cena': None, 'kolejna_taniej_proc': None, 'warunek': None},  # bez nazwy: odrzucone
+        {'nazwa': 'Parówki z szynki', 'marka': 'Pikok', 'opakowanie': '300 g', 'cena': '6,99', 'cena_przed': '9,99', 'cena_jednostkowa': '1 kg = 23,30'},
+        {'nazwa': 'Napój Coca-Cola', 'marka': None, 'opakowanie': '1,5 l', 'cena': '9,99', 'cena_jednostkowa': '1 l = 2,22', 'promocja': '3 za 9,99 zł', 'warunek': 'z Lidl Plus'},
+        {'nazwa': 'Ser Gouda', 'marka': 'Pilos', 'opakowanie': '300 g', 'cena': '11,39', 'cena_jednostkowa': '1 kg = 99,99'},  # zły odczyt: cena jedn. się nie zgadza
+        {'nazwa': 'Jogurt', 'marka': None, 'opakowanie': '150 g', 'cena': '1,99', 'promocja': 'drugi produkt -50%'},
+        {'nazwa': '', 'marka': None, 'opakowanie': None, 'cena': '5,00'},  # bez nazwy: odrzucone
     ]}
 
     def test_map_item(self):
@@ -78,7 +78,7 @@ class Lidl(unittest.TestCase):
         self.assertEqual((par['name'], par['price'], par['old'], par['conf']), ('Pikok Parówki z szynki', 699, 999, 'ok'))
         self.assertEqual((cola['mode'], cola['need'], cola['price'], cola['amount'], cola['unit'], cola['conf']), ('bundle', 3, 999, 1.5, 'l', 'ok'))
         self.assertEqual(ser['conf'], 'check'); self.assertIn('wg sklepu', ser['note'])
-        self.assertEqual((jog['mode'], jog['pct'], jog['need'], jog['conf']), ('nth', 50.0, 2, 'check'))
+        self.assertEqual((jog['mode'], jog['need'], jog['price'], jog['conf'], jog['promo']), ('unit', 1, 199, 'check', 'drugi produkt -50%'))  # bez kontroli: tylko cena z gazetki
 
     def test_collect_z_atrapa_gemini_i_cache(self):
         import lidl
@@ -149,12 +149,10 @@ class Promocje(unittest.TestCase):
 
     def test_lidl_trzy_w_cenie_dwoch(self):
         import lidl
-        it = {'nazwa': 'Coca-Cola', 'marka': None, 'opakowanie': '2 l', 'cena': 7.49, 'cena_przed': None, 'cena_jednostkowa': '1 l = 3,75', 'komplet_ilosc': 3, 'komplet_platnych': 2, 'komplet_cena': None, 'kolejna_taniej_proc': None, 'promocja': '3 za 2', 'warunek': None}
+        it = {'nazwa': 'Coca-Cola', 'marka': None, 'opakowanie': '2 l', 'cena': '7,49', 'cena_jednostkowa': '1 l = 3,75', 'promocja': '3 za 2'}
         o = lidl.map_item(it, '2026-11-02', '2026-11-04')
         self.assertEqual((o['mode'], o['need'], o['pay'], o['price'], o['conf'], o['promo']), ('bundle', 3, 2, 1498, 'ok', '3 za 2'))
-        # tekst promocji bez pól liczbowych też wystarczy
-        it2 = dict(it, komplet_ilosc=None, komplet_platnych=None, promocja='2+1 gratis')
-        o2 = lidl.map_item(it2, '2026-11-02', '2026-11-04')
+        o2 = lidl.map_item(dict(it, promocja='2+1 gratis'), '2026-11-02', '2026-11-04')
         self.assertEqual((o2['mode'], o2['need'], o2['pay']), ('bundle', 3, 2))
 
     def test_kaufland_wykrywa_promocje(self):
@@ -162,7 +160,12 @@ class Promocje(unittest.TestCase):
         row = ['Napoje', 'Oferta ważna od 29.10. do 04.11.', 'Pepsi', 'Napój gazowany', '2 l opakowanie', '(=1 l 3,75)', '3 za 2', '7,49', '', 0, 'Pepsi Napój gazowany 2 l (=1 l 3,75) 3 za 2 7,49']
         offers, _ = kaufland.parse_rows([row], dt.date(2026, 11, 2))
         o = offers[0]
-        self.assertEqual((o['mode'], o['need'], o['pay'], o['price'], o['conf']), ('bundle', 3, 2, 1498, 'check'))
+        self.assertEqual((o['mode'], o['need'], o['pay'], o['price'], o['conf']), ('bundle', 3, 2, 1498, 'ok'))  # etykieta promocji + zgodna cena za litr
+        r2 = list(row); r2[6] = ''  # promocja tylko w opisie: niepewna
+        self.assertEqual(kaufland.parse_rows([r2], dt.date(2026, 11, 2))[0][0]['conf'], 'check')
+        r3 = ['Napoje', 'Oferta ważna od 29.10. do 04.11.', 'Cola', 'Napój', '3 x 1,5 l', '(=1 l 2,22)', '3 za 9,99 zł', '9,99', '', 0, '']
+        o3 = kaufland.parse_rows([r3], dt.date(2026, 11, 2))[0][0]
+        self.assertEqual((o3['need'], o3['amount'], o3['price'], o3['conf']), (3, 1.5, 999, 'ok'))  # bez podwójnego mnożenia
 
 
 class Czas(unittest.TestCase):

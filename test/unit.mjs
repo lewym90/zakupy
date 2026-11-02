@@ -93,5 +93,19 @@ eq(effectiveModel('gemini-2.5-flash'), DEFAULT_MODEL, 'wycofany model => domyśl
   eq(whereLabel({ store: 'Lidl', page: 14 }), 'gazetka Lidl, str. 14', 'gdzie: Lidl');
   eq(whereLabel({ store: 'Kaufland', section: 'Napoje' }), 'dział „Napoje”', 'gdzie: Kaufland');
 }
+{
+  const { compareGroups: cg, isSure, flyerUrl, promoLabel } = await import('../js/offers.js');
+  const eq = (a, b, m) => { if (JSON.stringify(a) !== JSON.stringify(b)) { bad++; console.log('FAIL', m, JSON.stringify(a), '!=', JSON.stringify(b)); } };
+  const zl = c => (c / 100).toFixed(2).replace('.', ',') + ' zł';
+  const bl = { id: 'x', store: 'Lidl', name: 'Coca-Cola', price: 998, amount: 2, unit: 'l', mode: 'bundle', need: 2, until: '2999-01-01', conf: 'check' };
+  const ok = { id: 'k', store: 'Kaufland', name: 'Coca-Cola', price: 1398, amount: 2, unit: 'l', mode: 'bundle', need: 2, until: '2999-01-01', conf: 'ok' };
+  const ok2 = { ...ok, id: 'l', store: 'Lidl', price: 998, amount: 1 };
+  eq(cg([bl, ok], '2026-01-01').length, 0, 'niepewna oferta nie tworzy porównania');
+  eq(cg([bl, ok, ok2], '2026-01-01')[0].rows.map(r => r.o.id), ['k', 'l'], 'niepewna poza „najtaniej”: wygrywa potwierdzone 3,50 zł/l');
+  eq(isSure({}), true, 'własna oferta bez znacznika jest pewna');
+  eq(promoLabel({ ...ok2, promo: 'Dwusztuk' }, zl), 'Dwusztuk', 'napis jak w sklepie');
+  eq(flyerUrl({ store: 'Lidl', section: 'gazetka-02-11-pon-kw45', page: 10 }), 'https://www.lidl.pl/l/pl/gazetki/gazetka-02-11-pon-kw45/view/flyer/page/10', 'link do strony gazetki');
+  eq(flyerUrl({ store: 'Kaufland', section: 'Napoje' }), '', 'bez linku poza gazetką');
+}
 console.log(bad ? bad + ' błędów' : 'unit OK');
 process.exit(bad ? 1 : 0);

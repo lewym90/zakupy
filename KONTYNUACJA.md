@@ -1,11 +1,11 @@
 # KONTYNUACJA: Zakupy (prywatna aplikacja PWA do cen, ofert i budżetu)
 
-> Ten plik ma pozwolić nowemu Claude (na nowym koncie) przejąć pracę bez utraty kontekstu. Jest w PUBLICZNYM repozytorium, więc nie ma w nim żadnych kluczy, tokenów ani adresów prywatnego serwera. Stan na 2026-11-02, wersja aplikacji 0.3.2, ostatni commit przed tym plikiem: afa54f0.
+> Ten plik ma pozwolić nowemu Claude (na nowym koncie) przejąć pracę bez utraty kontekstu. Jest w PUBLICZNYM repozytorium, więc nie ma w nim żadnych kluczy, tokenów ani adresów prywatnego serwera. Stan na 2026-11-02, wersja aplikacji 0.4.0.
 
 ## 0. Co zrobić jako pierwsze (nowy Claude)
 1. Przeczytaj cały ten plik, potem `README.md` i `server/README.md`. Nie zaczynaj od zera i nie przepisuj działających rzeczy bez powodu.
-2. Uruchom testy i potwierdź, że repo jest spójne: `node test/unit.mjs`; `python3 test/e2e.py` (Playwright + Chromium); `python3 test/e2e_gemini.py` (wymaga `/tmp/receipt.jpg` z `python3 mkreceipt.py`, jeśli skryptu brak, pomiń); w katalogu `server`: `python3 -m unittest test.test_normalize test.test_zrodla`. Wersja w `js/app.js` (VERSION) musi równać się wersji w `sw.js` (VER).
-3. **Najpilniejsze zadanie: sekcja 5 (błędne dane z odczytu Lidla przez Gemini).** Właściciel uznał obecny sposób odczytu za nieufny i kazał przebudować go od nowa. Zacznij od zaproponowania właścicielowi krótkiego planu zgodnego z sekcją 6 i zrób to, zanim dodasz cokolwiek nowego.
+2. Uruchom testy i potwierdź, że repo jest spójne: `node test/unit.mjs`; `python3 test/e2e.py` (Playwright + Chromium); `python3 test/e2e_gemini.py` (wymaga `/tmp/receipt.jpg` z `python3 mkreceipt.py`, jeśli skryptu brak, pomiń); w katalogu `server`: `python3 -m unittest test.test_zlote test.test_normalize test.test_zrodla`. Wersja w `js/app.js` (VERSION) musi równać się wersji w `sw.js` (VER).
+3. **Najpilniejsze zadanie: dokończyć weryfikację sekcji 5 na serwerze (sekcja 8, punkt 2).** Przebudowa z v0.4.0 jest w kodzie i przechodzi testy na tekstach z gazetki, ale nie była jeszcze sprawdzona na prawdziwym odczycie Gemini.
 4. Rozmawiaj po polsku, krótko, konkretnie. Patrz sekcja 1.
 
 ## 1. Właściciel i zasady współpracy (obowiązują zawsze)
@@ -53,7 +53,11 @@ Właściciel wstawił zrzuty ekranu strony 10–11 gazetki Lidl (`lidl.pl/l/pl/g
 - **Przyczyna:** model wpisał do pola `opakowanie` tekst już zawierający mnożnik („2 x 1 L”, „4 x 2 L”), a kod pomnożył jeszcze raz przez `komplet_ilosc`, czyli policzył liczbę sztuk podwójnie. Kontrola `verify_any` porównuje cenę jednej sztuki z ceną jednostkową ze strony, więc taka oferta dostała `conf:'check'` („odczyt do sprawdzenia”), ale **aplikacja mimo to pokazała błędną cenę za litr**, co jest niedopuszczalne. Dodatkowo kaucja (osobna, nieliczona w cenie jednostkowej) bywa mylona z ceną.
 - Wniosek właściciela (dosłownie w sensie): nie można ufać Gemini; „to wszystko musi być przebudowane od nowa”. Gemini sprawdza się tylko jako czytnik tekstu, nie jako źródło liczb.
 
+**Stan po v0.4.0:** przyczyna usunięta w kodzie. Gemini tylko przepisuje tekst (nowy prompt, klucz cache `|v3`), a `normalize.interpret` układa możliwe odczytania i przyjmuje tylko takie, które zgadza się z wydrukowaną ceną jednostkową (±2%, kaucja osobno). Bez tej ceny wystarcza zgodny druk „N x cena = suma kompletu”. W innym wypadku oferta dostaje `conf:'check'`: bez przeliczeń, poza porównaniem, ukryta za paskiem „Ukryto N ofert” z przyciskiem „Pokaż”. Złote testy: `server/test/test_zlote.py`. Niezweryfikowane: prawdziwy odczyt nowego promptu przez Gemini.
+
 ## 6. Plan przebudowy (zalecany; uzgodnij z właścicielem)
+Wykonane w v0.4.0: punkty 1-5, 7, 8 (link do strony gazetki w szczegółach oferty, bez miniatury), 9 (nowy klucz cache). Otwarte: punkt 6.
+
 1. **Zasada nadrzędna:** niezweryfikowana liczba nie może trafić do widoku jako pewna. Oferta z `conf:'check'` NIE pokazuje obliczonej ceny za litr/kg (pokazuje cenę opakowania i napis „odczyt niepewny”), jest poza „najtaniej” i poza sortowaniem porównań; domyślnie ukryta za przełącznikiem „pokaż niepewne”.
 2. **Gemini jako OCR, nie interpretacja:** poproś model tylko o dosłowny odczyt tekstu z bloków oferty (nazwa, tekst opakowania, napis promocji, cena, tekst „1 L = …”, kaucja), zero wnioskowania. Całą semantykę (liczba sztuk, objętość sztuki, promocja, cena komplet/jednostka) liczy deterministyczny kod z `normalize.py` (`parse_pack`, `parse_multibuy`).
 3. **Kotwica: cena jednostkowa wydrukowana w gazetce.** Z ceny kompletu i wydrukowanego „1 L = X” wylicz implikowaną ilość i wybierz tę interpretację zawartości (np. 8 l, nie 32 l), która zgadza się z nią (±2%, z uwzględnieniem, że kaucja jest dopisana osobno i nie wchodzi do ceny). Brak zgodności = `check`, bez liczb pochodnych.
@@ -66,12 +70,12 @@ Właściciel wstawił zrzuty ekranu strony 10–11 gazetki Lidl (`lidl.pl/l/pl/g
 
 ## 7. Co działa, a co nie jest zweryfikowane
 Działa i przetestowane: aplikacja (Start, Paragony, Cennik, Budżet, Okazje, Ustawienia), układ responsywny, autoaktualizacja, adres ofert i pobieranie, układ ofert (cena opakowania, zawartość, przeliczenie), oznaczenia promocji i filtr „Komplety i 2+1”, Kaufland (ok. 900 ofert z prawdziwej strony), zbieracz (instalator, timer, Caddy, ponawianie, fallback modelu).
-Nie działa poprawnie: **odczyt Lidla (sekcja 5)**; Kaufland: promocje wielosztukowe wykrywane tylko ogólnie w tekście kafelka (brak prawdziwych próbek), więc zawsze „do sprawdzenia”.
+Do potwierdzenia na serwerze: **odczyt Lidla po przebudowie (sekcja 5)**. Kaufland: promocja jest pewna tylko wtedy, gdy stoi w etykiecie ceny i cena zgadza się z ceną za jednostkę; wykryta jedynie w opisie kafelka zostaje niepewna (brak prawdziwych próbek).
 Niezweryfikowane: odczyt zdjęcia paragonu przez Gemini na żywo i przycisk „Sprawdź klucz”; iPhone/Safari (ekran początkowy, aparat, autoaktualizacja w trybie standalone); prawdziwy tablet/laptop; nazwa modelu `gemini-3.8-flash` (z komunikatu Google).
 Biedronka: brak źródła; gazetki to płótno createjs z obrazami, trzeba zbadać viewer i adresy obrazów stron (przeglądarka w sesji dała dostęp do stron sklepów).
 
 ## 8. Zadania w kolejności
-1. Przebudowa odczytu ofert (sekcja 6) razem z poprawką widoku niepewnych ofert (zasada nadrzędna). Testy na przypadkach z sekcji 5.
+1. ZROBIONE w v0.4.0: przebudowa odczytu ofert i widoku niepewnych ofert.
 2. Weryfikacja na serwerze: właściciel uruchamia aktualizację i odczyt; Claude analizuje log i `oferty.json` na przykładach (poproś o fragmenty).
 3. Biedronka.
 4. Poprawa dopasowania „rodzin” produktów w porównaniu (słownik `FAMILIES` jest prosty; cola łączy marki; nie zna smaków i wariantów).

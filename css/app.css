@@ -242,3 +242,7 @@ input:focus, select:focus { border-color: var(--green); outline: none; box-shado
 .cmp-row .p b { font-size: 18px; }
 .cmp-row .mid { text-align: left; }
 .cmp-row .t { font-weight: 750; }
+
+/* niepewne odczyty ofert */
+.unsure-bar { margin: 4px 0 12px; padding: 9px 12px; border-radius: 12px; background: var(--card); border: 1.5px solid var(--line); color: var(--mut); font-size: 14px; }
+.offer.unsure { opacity: .86; }
