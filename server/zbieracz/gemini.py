@@ -18,6 +18,10 @@ class GeminiError(Exception):
         self.status = status
 
 
+class DailyQuota(GeminiError):
+    pass
+
+
 def _req(url, key, body=None, timeout=180):
     data = json.dumps(body).encode() if body is not None else None
     r = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json', 'x-goog-api-key': key})
@@ -29,7 +33,7 @@ def _req(url, key, body=None, timeout=180):
             msg = json.loads(e.read()).get('error', {}).get('message', '')
         except Exception:
             msg = ''
-        raise GeminiError(e.code, f'Gemini {e.code}: {msg[:200]}')
+        raise GeminiError(e.code, f'Gemini {e.code}: {msg[:700]}')
     except urllib.error.URLError as e:
         raise GeminiError(0, f'Brak połączenia z Gemini: {e.reason}')
     except (TimeoutError, OSError) as e:  # np. "The read operation timed out"
@@ -52,7 +56,7 @@ def pick_flash(models):
 class Reader:
     def __init__(self, key, model=None, pause=None):
         self.key, self.model, self._last = key, model or DEFAULT_MODEL, 0.0
-        self.pause = float(os.environ.get('ZBIERACZ_PAUSE', '7')) if pause is None else pause
+        self.pause = float(os.environ.get('ZBIERACZ_PAUSE', '13')) if pause is None else pause
 
     def _call(self, image_bytes, prompt):
         url = f'{BASE}/models/{self.model}:generateContent'
@@ -80,8 +84,10 @@ class Reader:
                 txt = ''.join(p.get('text', '') for p in j['candidates'][0]['content']['parts'])
                 return json.loads(txt)
             except GeminiError as e:
+                if e.status == 429 and re.search(r'PerDay|per day|daily', str(e), re.I):
+                    raise DailyQuota(e.status, str(e))  # dzienny limit darmowego klucza: nie ma sensu ponawiać
                 if e.status in (0, 429, 500, 503) and attempt < 3:
-                    time.sleep(20 * (attempt + 1))
+                    time.sleep(65 if e.status == 429 else 25 * (attempt + 1))
                     continue
                 raise
             except (KeyError, IndexError, ValueError):

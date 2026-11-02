@@ -97,6 +97,10 @@ def collect(page, ctx, key, cache_dir, max_pages=140, only=DEFAULT_ONLY, log=pri
                     continue
                 try:
                     items = reader.read_json(r.body(), PROMPT).get('oferty', [])
+                except gemini.DailyQuota as e:
+                    warns.append('Lidl: dzienny limit darmowego Gemini wyczerpany; reszta stron zostanie doczytana przy następnym uruchomieniu')
+                    log('Lidl: dzienny limit Gemini wyczerpany, kończę na tym uruchomieniu')
+                    return offers, warns
                 except gemini.GeminiError as e:
                     if e.status in (400, 401, 403, 404):
                         raise  # problem z kluczem/modelem: dalsze strony też się nie uda

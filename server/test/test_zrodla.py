@@ -156,5 +156,18 @@ class Czas(unittest.TestCase):
         self.assertEqual(len(calls), 2)
 
 
+    def test_dzienny_limit(self):
+        import gemini, urllib.request, urllib.error, io
+        orig = urllib.request.urlopen
+        def fake(r, timeout=None):
+            raise urllib.error.HTTPError('u', 429, 'x', {}, io.BytesIO(json.dumps({'error': {'message': 'Quota exceeded for metric GenerateRequestsPerDayPerProjectPerModel-FreeTier'}}).encode()))
+        urllib.request.urlopen = fake
+        try:
+            with self.assertRaises(gemini.DailyQuota):
+                gemini.Reader('K', 'm', pause=0).read_json(b'x', 'p')
+        finally:
+            urllib.request.urlopen = orig
+
+
 if __name__ == '__main__':
     unittest.main()
