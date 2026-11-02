@@ -87,11 +87,12 @@ class Lidl(unittest.TestCase):
         class H(http.server.BaseHTTPRequestHandler):
             def log_message(self, *a): pass
             def do_POST(self):
-                n = int(self.headers.get('Content-Length', 0)); self.rfile.read(n); calls.append(self.path)
+                n = int(self.headers.get('Content-Length', 0)); raw = self.rfile.read(n); calls.append(self.path)
+                nimg = raw.count(b'inline_data')
                 if 'gemini-9.0-flash' in self.path:
                     self.send_response(404); self.send_header('Content-Type', 'application/json'); self.end_headers()
                     self.wfile.write(json.dumps({'error': {'message': 'no longer available'}}).encode()); return
-                body = {'candidates': [{'content': {'parts': [{'text': json.dumps(Lidl.ITEMS)}]}}]}
+                body = {'candidates': [{'content': {'parts': [{'text': json.dumps({'strony': [{'numer': i + 1, 'oferty': Lidl.ITEMS['oferty']} for i in range(nimg)]})}]}}]}
                 self.send_response(200); self.send_header('Content-Type', 'application/json'); self.end_headers(); self.wfile.write(json.dumps(body).encode())
             def do_GET(self):
                 calls.append(self.path)
@@ -123,7 +124,7 @@ class Lidl(unittest.TestCase):
         offers, warns = lidl.collect(Page(), Ctx(), 'KEY', cache, log=lambda *a: None)
         self.assertEqual(len(offers), 8)  # 2 strony x 4 poprawne pozycje (run.py scala potem po id)
         self.assertEqual(len({o['id'] for o in offers}), 4)
-        self.assertEqual(len([c for c in calls if c.endswith(':generateContent')]), 3)  # 404 (stary model) + 2 strony nowym modelem
+        self.assertEqual(len([c for c in calls if c.endswith(':generateContent')]), 2)  # 404 (stary model) + jedno zapytanie z 2 stronami
         n = len(calls)
         offers2, _ = lidl.collect(Page(), Ctx(), 'KEY', cache, log=lambda *a: None)  # drugi raz: wszystko z pamięci, zero zapytań do Gemini
         self.assertEqual(len(offers2), 8); self.assertEqual(len(calls), n)
@@ -167,6 +168,30 @@ class Czas(unittest.TestCase):
                 gemini.Reader('K', 'm', pause=0).read_json(b'x', 'p')
         finally:
             urllib.request.urlopen = orig
+
+
+    def test_zmiana_modelu_po_dziennym_limicie(self):
+        import gemini
+        seen = []
+        class H(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *a): pass
+            def do_POST(self):
+                self.rfile.read(int(self.headers.get('Content-Length', 0))); seen.append(self.path)
+                if 'gemini-3.8-flash:' in self.path:
+                    self.send_response(429); self.send_header('Content-Type', 'application/json'); self.end_headers()
+                    self.wfile.write(json.dumps({'error': {'message': 'Quota exceeded for metric ...RequestsPerDay... FreeTier'}}).encode()); return
+                self.send_response(200); self.send_header('Content-Type', 'application/json'); self.end_headers()
+                self.wfile.write(json.dumps({'candidates': [{'content': {'parts': [{'text': '{"strony":[]}'}]}}]}).encode())
+            def do_GET(self):
+                self.send_response(200); self.send_header('Content-Type', 'application/json'); self.end_headers()
+                self.wfile.write(json.dumps({'models': [{'name': 'models/gemini-3.8-flash', 'supportedGenerationMethods': ['generateContent']}, {'name': 'models/gemini-3.8-flash-lite', 'supportedGenerationMethods': ['generateContent']}, {'name': 'models/gemini-3.8-pro', 'supportedGenerationMethods': ['generateContent']}]}).encode())
+        srv = http.server.HTTPServer(('127.0.0.1', 0), H); threading.Thread(target=srv.serve_forever, daemon=True).start()
+        gemini.BASE = f'http://127.0.0.1:{srv.server_port}/v1beta'
+        r = gemini.Reader('K', 'gemini-3.8-flash', pause=0)
+        self.assertEqual(r.read_json([b'x', b'y'], 'p'), {'strony': []})
+        self.assertEqual(r.model, 'gemini-3.8-flash-lite')
+        self.assertTrue(seen[-1].endswith('gemini-3.8-flash-lite:generateContent'))
+        srv.shutdown()
 
 
 if __name__ == '__main__':

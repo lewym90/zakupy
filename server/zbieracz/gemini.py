@@ -57,10 +57,27 @@ class Reader:
     def __init__(self, key, model=None, pause=None):
         self.key, self.model, self._last = key, model or DEFAULT_MODEL, 0.0
         self.pause = float(os.environ.get('ZBIERACZ_PAUSE', '13')) if pause is None else pause
+        self.tried = {self.model}
+
+    def _next_model(self):
+        """Inny model flash/flash-lite z własnym dziennym limitem (darmowe limity są liczone osobno dla każdego modelu)."""
+        cand = []
+        try:
+            models = _req(f'{BASE}/models?pageSize=200', self.key).get('models', [])
+        except GeminiError:
+            return None
+        for m in models:
+            name = re.sub(r'^models/', '', str(m.get('name', '')))
+            mm = re.fullmatch(r'gemini-(\d+(?:\.\d+)?)-flash(-lite)?', name)
+            if mm and 'generateContent' in m.get('supportedGenerationMethods', ['generateContent']) and name not in self.tried:
+                cand.append((-float(mm.group(1)), bool(mm.group(2)), name))
+        return sorted(cand)[0][2] if cand else None
 
     def _call(self, image_bytes, prompt):
         url = f'{BASE}/models/{self.model}:generateContent'
-        body = {'contents': [{'parts': [{'text': prompt}, {'inline_data': {'mime_type': 'image/jpeg', 'data': base64.b64encode(image_bytes).decode()}}]}],
+        imgs = image_bytes if isinstance(image_bytes, (list, tuple)) else [image_bytes]
+        parts = [{'text': prompt}] + [{'inline_data': {'mime_type': 'image/jpeg', 'data': base64.b64encode(b).decode()}} for b in imgs]
+        body = {'contents': [{'parts': parts}],
                 'generationConfig': {'responseMimeType': 'application/json', 'temperature': 0}}
         return _req(url, self.key, body)
 
@@ -85,7 +102,12 @@ class Reader:
                 return json.loads(txt)
             except GeminiError as e:
                 if e.status == 429 and re.search(r'PerDay|per day|daily', str(e), re.I):
-                    raise DailyQuota(e.status, str(e))  # dzienny limit darmowego klucza: nie ma sensu ponawiać
+                    nxt = self._next_model()
+                    if nxt:
+                        print(f'Gemini: dzienny limit modelu {self.model}; przechodzę na {nxt}. ({str(e)[:300]})', flush=True)
+                        self.model = nxt; self.tried.add(nxt)
+                        continue
+                    raise DailyQuota(e.status, str(e))  # nie ma już modelu z wolnym limitem
                 if e.status in (0, 429, 500, 503) and attempt < 3:
                     time.sleep(65 if e.status == 429 else 25 * (attempt + 1))
                     continue

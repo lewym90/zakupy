@@ -69,7 +69,17 @@ def map_item(it, valid_from, valid_to, section=''):
     return o
 
 
-def collect(page, ctx, key, cache_dir, max_pages=140, only=DEFAULT_ONLY, log=print):
+def _batch_prompt():
+    rules = 'Zasady:' + PROMPT.split('Zasady:', 1)[1]
+    return ('Odczytaj ze zdjęć kolejnych stron gazetki Lidl (obrazy są w kolejności 1, 2, 3...) WSZYSTKIE oferty spożywcze i drogeryjne. Zwróć wyłącznie JSON:\n'
+            '{"strony":[{"numer":1,"oferty":[...]},{"numer":2,"oferty":[...]}]}\n'
+            'gdzie "numer" to kolejność obrazu w tej wiadomości, a każda oferta ma pola:\n'
+            '{"nazwa":string,"marka":string|null,"opakowanie":string|null,"cena":number,"cena_przed":number|null,"cena_jednostkowa":string|null,"komplet_ilosc":number|null,"komplet_cena":number|null,"kolejna_taniej_proc":number|null,"warunek":string|null}\n'
+            + rules)
+
+
+def collect(page, ctx, key, cache_dir, max_pages=140, only=DEFAULT_ONLY, log=print, batch=None):
+    batch = batch or int(os.environ.get('LIDL_BATCH', '3'))
     reader = Reader(key)
     offers, warns = [], []
     pages_read = 0
@@ -80,40 +90,57 @@ def collect(page, ctx, key, cache_dir, max_pages=140, only=DEFAULT_ONLY, log=pri
         if not vt:
             warns.append(f'Lidl {slug}: brak dat ważności')
             continue
+        items_by_page, todo = {}, []
         for p in fl.get('pages', []):
             img = p.get('image')
             if not img:
                 continue
             ck = os.path.join(cache_dir, hashlib.sha1((slug + '|' + img).encode()).hexdigest() + '.json')
             if os.path.exists(ck):
-                items = json.load(open(ck))
+                with open(ck, encoding='utf-8') as f:
+                    items_by_page[p.get('number')] = json.load(f)
             else:
-                if pages_read >= max_pages:
-                    warns.append(f'Lidl {slug}: limit stron na jedno uruchomienie ({max_pages}); reszta przy następnym')
-                    break
+                todo.append((p.get('number'), img, ck))
+        if len(todo) > max_pages - pages_read:
+            warns.append(f'Lidl {slug}: limit stron na jedno uruchomienie ({max_pages}); reszta przy następnym')
+            todo = todo[:max(0, max_pages - pages_read)]
+        for i in range(0, len(todo), batch):
+            chunk, imgs = [], []
+            for num, img, ck in todo[i:i + batch]:
                 r = ctx.request.get(img, headers={'Referer': 'https://www.lidl.pl/'}, timeout=60000)
                 if not r.ok:
-                    warns.append(f'Lidl {slug} str. {p.get("number")}: obraz {r.status}')
+                    warns.append(f'Lidl {slug} str. {num}: obraz {r.status}')
                     continue
-                try:
-                    items = reader.read_json(r.body(), PROMPT).get('oferty', [])
-                except gemini.DailyQuota as e:
-                    warns.append('Lidl: dzienny limit darmowego Gemini wyczerpany; reszta stron zostanie doczytana przy następnym uruchomieniu')
-                    log('Lidl: dzienny limit Gemini wyczerpany, kończę na tym uruchomieniu')
-                    return offers, warns
-                except gemini.GeminiError as e:
-                    if e.status in (400, 401, 403, 404):
-                        raise  # problem z kluczem/modelem: dalsze strony też się nie uda
-                    fails += 1
-                    warns.append(f'Lidl {slug} str. {p.get("number")}: {e}')
-                    log(f'Lidl {slug} str. {p.get("number")}: BŁĄD {e}')
-                    if fails >= 5:
-                        raise
+                chunk.append((num, ck)); imgs.append(r.body())
+            if not imgs:
+                continue
+            try:
+                res = reader.read_json(imgs, _batch_prompt())
+            except gemini.DailyQuota:
+                warns.append('Lidl: dzienne limity Gemini wyczerpane; reszta stron zostanie doczytana przy następnym uruchomieniu')
+                log('Lidl: dzienne limity Gemini wyczerpane, kończę na tym uruchomieniu')
+                break
+            except gemini.GeminiError as e:
+                if e.status in (400, 401, 403, 404):
+                    raise
+                fails += 1
+                warns.append(f'Lidl {slug} str. {[c[0] for c in chunk]}: {e}')
+                log(f'Lidl {slug} str. {[c[0] for c in chunk]}: BŁĄD {e}')
+                if fails >= 5:
+                    raise
+                continue
+            got = {int(x.get('numer')): x.get('oferty') or [] for x in (res.get('strony') or []) if isinstance(x, dict) and str(x.get('numer', '')).isdigit()}
+            for idx, (num, ck) in enumerate(chunk, 1):
+                if idx not in got:
+                    warns.append(f'Lidl {slug} str. {num}: brak w odpowiedzi modelu')
                     continue
-                json.dump(items, open(ck, 'w'), ensure_ascii=False)
+                items_by_page[num] = got[idx]
+                with open(ck, 'w', encoding='utf-8') as f:
+                    json.dump(got[idx], f, ensure_ascii=False)
                 pages_read += 1
-                log(f'Lidl {slug} str. {p.get("number")}: {len(items)} ofert')
-            for it in items:
+                log(f'Lidl {slug} str. {num}: {len(got[idx])} ofert')
+        for num in sorted(k for k in items_by_page if k is not None):
+            for it in items_by_page[num]:
                 o = map_item(it, vf or vt, vt, section=slug)
                 if o:
                     offers.append(o)
