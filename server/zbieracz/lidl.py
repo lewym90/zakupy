@@ -11,7 +11,7 @@ from normalize import make_offer, money, parse_base_price, parse_pack, verify
 LIST_URL = 'https://www.lidl.pl/c/nasze-gazetki/s10008614'
 API = 'https://endpoints.leaflets.schwarz/v4/flyer?flyer_identifier={slug}&region_id=0&region_code=0'
 # domyślnie tylko gazetki spożywcze (katalogi, zabawki, alkohole mocne pomijamy)
-DEFAULT_ONLY = r'^gazetka'
+DEFAULT_ONLY = r'^gazetka(?!.*katalog)'
 
 PROMPT = """Odczytaj ze zdjęcia strony gazetki Lidl WSZYSTKIE oferty spożywcze i drogeryjne. Zwróć wyłącznie JSON:
 {"oferty":[{"nazwa":string,"marka":string|null,"opakowanie":string|null,"cena":number,"cena_przed":number|null,"cena_jednostkowa":string|null,"komplet_ilosc":number|null,"komplet_cena":number|null,"kolejna_taniej_proc":number|null,"warunek":string|null}]}
