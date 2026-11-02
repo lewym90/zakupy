@@ -4,11 +4,14 @@ import { esc, zl, zlShort, parseMoney, parseNum, centsToInput, norm, uid, todayI
 import { products, matchProduct, verdict, monthStats, monthTotals, receiptTotal, lineSum } from './calc.js';
 import { readReceipt, DEFAULT_MODEL, effectiveModel, listModels, pickFlash } from './gemini.js';
 import { itemFromOffer, manualItem, byStore } from './lista.js';
+import { matchOffers, basket, pantryLow, planSummary } from './plan.js';
+import { ic } from './icons.js';
 import { offerCalc, compareGroups, familyOf, offerLabel, UNITS, packLabel, unitPrice, promoLabel, whereLabel, isMulti, isSure, isHidden, flyerUrl } from './offers.js';
 
-const VERSION = '0.5.0';
+const VERSION = '0.6.0';
+const LISTS = ['lista', 'stale', 'chce', 'spiz'];
 const NOW_YM = () => todayISO().slice(0, 7);
-const S = { receipts: [], offers: [], kv: {}, tab: 'start', omode: 'lista', ym: NOW_YM(), q: '', cat: '', ocat: '', lastStore: 'Biedronka', srv: null, oq: '', ounsure: false, lstore: '' };
+const S = { receipts: [], offers: [], kv: {}, tab: 'start', omode: 'lista', ym: NOW_YM(), q: '', cat: '', ocat: '', lastStore: 'Biedronka', srv: null, oq: '', ounsure: false, lstore: '', lmode: 'zakupy' };
 const view = document.getElementById('view');
 
 const ICON = {
@@ -18,9 +21,13 @@ const ICON = {
   okazje: '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
   lista: '<path d="M9 6h11M9 12h11M9 18h11"/><path d="m3.5 6 1 1 2-2M3.5 12l1 1 2-2M3.5 18l1 1 2-2"/>',
   ustawienia: '<circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M18.7 5.3l-2.1 2.1M7.4 16.6l-2.1 2.1"/>',
+  wiecej: '<circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/>',
+  spizarnia: '<path d="M7 7h10M8 3.5h8a1 1 0 0 1 1 1V7l1 2v10.5a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V9l1-2V4.5a1 1 0 0 1 1-1Z"/><path d="M6 12h12v5H6z"/>',
   budzet: '<path d="M3 7.5h17a1 1 0 0 1 1 1V19a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M3 7.5 5.5 4h11"/><circle cx="16.5" cy="13.5" r="1.2"/>',
 };
-const TABS = [['start', 'Start'], ['paragony', 'Paragony'], ['cennik', 'Cennik'], ['okazje', 'Okazje'], ['lista', 'Lista'], ['budzet', 'Budżet'], ['ustawienia', 'Ustawienia']];
+// Telefon: pięć zakładek, reszta w „Więcej”. Większy ekran: wszystko w pasku bocznym.
+const TABS = [['start', 'Start'], ['okazje', 'Okazje'], ['lista', 'Lista'], ['paragony', 'Paragony'], ['cennik', 'Cennik', 'wide'], ['spizarnia', 'Spiżarnia', 'wide'], ['budzet', 'Budżet', 'wide'], ['ustawienia', 'Ustawienia', 'wide'], ['wiecej', 'Więcej', 'narrow']];
+const PARENT = { cennik: 'paragony', spizarnia: 'wiecej', budzet: 'wiecej', ustawienia: 'wiecej' };
 
 function toast(msg) {
   const t = document.getElementById('toast');
@@ -32,11 +39,12 @@ function toast(msg) {
 async function init() {
   const [receipts, offers] = await Promise.all([all('receipts'), all('offers')]);
   S.receipts = receipts; S.offers = offers;
-  for (const k of ['limit', 'catLimits', 'geminiKey', 'geminiModel', 'srvUrl', 'lista', 'catFix']) S.kv[k] = await kvGet(k);
-  S.kv.lista = S.kv.lista || []; S.kv.catFix = S.kv.catFix || {};
+  for (const k of ['limit', 'catLimits', 'geminiKey', 'geminiModel', 'srvUrl', ...LISTS, 'catFix', 'plan']) S.kv[k] = await kvGet(k);
+  for (const k of LISTS) S.kv[k] = S.kv[k] || [];
+  S.kv.catFix = S.kv.catFix || {}; S.kv.plan = S.kv.plan || {};
   S.srv = (await kvGet('srvOffers')) || null;
-  document.getElementById('tabbar').innerHTML = TABS.map(([id, n]) =>
-    `<button class="tab" data-tab="${id}"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON[id]}</svg>${n}</button>`).join('');
+  document.getElementById('tabbar').innerHTML = TABS.map(([id, n, c]) =>
+    `<button class="tab ${c || ''}" data-tab="${id}"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true">${ICON[id]}</svg>${n}</button>`).join('');
   document.getElementById('tabbar').addEventListener('click', e => {
     const b = e.target.closest('[data-tab]'); if (!b) return;
     if (S.reload) { location.reload(); return; }
@@ -50,7 +58,8 @@ async function init() {
 
 function render() {
   S._p = null;
-  document.querySelectorAll('.tab').forEach(b => b.setAttribute('aria-current', b.dataset.tab === S.tab ? 'page' : 'false'));
+  const cur = matchMedia('(min-width: 720px)').matches ? S.tab : (PARENT[S.tab] || S.tab);
+  document.querySelectorAll('.tab').forEach(b => b.setAttribute('aria-current', b.dataset.tab === cur ? 'page' : 'false'));
   view.dataset.screen = S.tab;
   view.innerHTML = SCREENS[S.tab]();
   const names = [...new Map(S.receipts.flatMap(r => r.lines).filter(l => l.name).map(l => [norm(l.name), l.name])).values()];
@@ -58,18 +67,17 @@ function render() {
 }
 
 /* ---------- ekrany ---------- */
-const SCREENS = { start, paragony, cennik, okazje, lista, budzet, ustawienia };
+const SCREENS = { start, paragony, cennik, okazje, lista, budzet, ustawienia, spizarnia, wiecej };
 
-function receiptEmoji(r) {
-  const sums = {};
-  for (const l of r.lines) if (l.total > 0) sums[l.cat] = (sums[l.cat] || 0) + l.total;
-  const top = Object.entries(sums).sort((a, b) => b[1] - a[1])[0];
-  return top ? catById(top[0]).e : '🧾';
+// Cena jak na etykiecie. Przecinek zostaje w tekście dla czytników ekranu.
+function pr(g, tag) {
+  const [a, b] = (Math.abs(g) / 100).toFixed(2).split('.');
+  return `<span class="pr${tag ? ' tagp' : ''}">${g < 0 ? '−' : ''}${Number(a).toLocaleString('pl-PL')}<span class="cm">,</span><sup>${b}</sup><small> zł</small></span>`;
 }
 function receiptItem(r) {
   const mark = r.check === 'ok' ? '<span class="down" title="Suma się zgadza"> ✓</span>' : r.check === 'diff' ? '<span class="up" title="Suma się nie zgadza"> ⚠</span>' : '';
-  return `<button class="item" data-act="receipt" data-id="${r.id}"><span class="em">${receiptEmoji(r)}</span>
-    <span class="mid"><span class="t">${esc(r.store)}${mark}</span><span class="s">${fmtDate(r.date)} · ${r.lines.length} poz.</span></span>
+  return `<button class="item" data-act="receipt" data-id="${r.id}">
+    <span class="mid"><span class="t">${esc(r.store)}${mark}</span><span class="s">${fmtDate(r.date)}, ${r.lines.length} poz.</span></span>
     <span class="r num">${zl(receiptTotal(r))}</span></button>`;
 }
 
@@ -79,26 +87,38 @@ function start() {
   const cur = S.ym === NOW_YM();
   const over = limit && st.spent > limit;
   const pct = limit ? Math.min(100, (st.spent / limit) * 100) : 0;
-  const rows = Object.entries(st.cats).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, 6)
-    .map(([c, v]) => `<div class="ln-line"><span class="l">${c === '__rest' ? '🧾 Nieprzypisane' : catById(c).e + ' ' + catById(c).n}</span><span class="d"></span><span class="v">${zl(v)}</span></div>`).join('');
+  const rows = Object.entries(st.cats).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, 5)
+    .map(([c, v]) => `<div class="ln-line"><span class="l">${c === '__rest' ? `${ic('inne')}Nieprzypisane` : `${ic(c)}${catById(c).n}`}</span><span class="v">${zl(v)}</span></div>`).join('');
   const day = new Date().getDate();
   const proj = cur && day >= 5 && st.spent > 0 ? Math.round((st.spent / day) * daysInMonth(S.ym)) : 0;
-  const good = allOffers().filter(o => o.until >= todayISO() && isSure(o)).filter(o => ['best', 'good'].includes(offerVerdict(o).t)).length;
-  return `<div class="head"><div><h1>Zakupy</h1><p class="sub">${S.receipts.length ? 'Wasz miesiąc w skrócie' : 'Zacznij od pierwszego paragonu'}</p></div>
+  const today = todayISO(), every = allOffers();
+  const good = every.filter(o => o.until >= today && isSure(o)).filter(o => ['best', 'good'].includes(offerVerdict(o).t)).length;
+  const stale = S.kv.stale.filter(i => matchOffers(i.name, every, today).length), low = pantryLow(S.kv.spiz);
+  const ps = cur && limit ? monthPlan() : null;
+  const alert = (tab, t, s2, extra = '') => `<button class="item alert" data-act="goto" data-tab="${tab}"${extra}><span class="mid"><span class="t">${t}</span><span class="s">${s2}</span></span>${ic('dalej', 'go')}</button>`;
+  const alerts = [
+    stale.length ? alert('lista', `Stałe produkty w ofercie: ${stale.length} z ${S.kv.stale.length}`, esc(stale.slice(0, 3).map(i => i.name).join(', ')), ' data-m="stale"') : '',
+    low.length ? alert('spizarnia', `Kończy się: ${low.length}`, esc(low.slice(0, 3).map(i => i.name).join(', '))) : '',
+    good ? alert('okazje', `${good} ${good === 1 ? 'okazja jest' : 'okazji jest'} lepsza niż zwykle`, 'Na podstawie Waszych paragonów') : '',
+  ].join('');
+  return `<div class="head"><div><h1>Zakupy</h1></div>
     <div class="mnav"><button data-act="mprev" aria-label="Poprzedni miesiąc">‹</button><b>${monthName(S.ym)}</b><button data-act="mnext" aria-label="Następny miesiąc">›</button></div></div>
-    <div class="tapewrap"><div class="tape ${st.saved > 0 ? "withst" : ""}">
-      <div class="shop"><span>Wydane</span><button data-act="new" aria-label="Dodaj paragon">+</button></div>
-      <div class="big">${zl(st.spent)}</div>
-      ${limit ? `<div class="of">z limitu ${zlShort(limit)}${over ? ' · przekroczony o ' + zl(st.spent - limit) : ' · zostało ' + zl(limit - st.spent)}</div><div class="bar ${over ? 'over' : ''}"><i style="width:${pct}%"></i></div>`
-        : `<div class="of">Limit miesięczny ustawisz w Budżecie</div>`}
-      ${rows ? `<div class="dots"></div>${rows}` : ''}
-      ${proj ? `<div class="proj">Przy tym tempie: ok. ${zlShort(proj)} na koniec miesiąca</div>` : ''}
-    </div>${st.saved > 0 ? `<div class="sticker"><b>${zl(st.saved)}</b><span>Oszczędzone na promocjach</span></div>` : ''}</div>
-    ${S.receipts.length === 0 ? `<div class="card empty"><div class="big">🧾</div><b>Tu zaczyna się Wasz cennik</b><p>Dodaj paragon ręcznie albo ze zdjęcia. Z kilku paragonów zobaczysz, ile naprawdę płacicie i które promocje się opłacają.</p><button class="btn" data-act="new">Dodaj pierwszy paragon</button></div>` : ''}
-    ${good ? `<button class="item" data-act="goto" data-tab="okazje" style="margin-bottom:8px"><span class="em">⚡</span><span class="mid"><span class="t">${good} ${good === 1 ? 'okazja jest' : 'okazji jest'} lepsza niż zwykle</span><span class="s">Na podstawie Waszych paragonów</span></span><span class="r">›</span></button>` : ''}
+    <div class="tapewrap"><div class="tape">
+      <div class="shop"><span>Wydane w tym miesiącu</span><button class="btn sm" data-act="new">Dodaj paragon</button></div>
+      <div class="big">${pr(st.spent)}</div>
+      ${limit ? `<div class="bar ${over ? 'over' : ''}"><i style="width:${pct}%"></i></div><div class="of">${over ? 'Limit przekroczony o ' + zl(st.spent - limit) : `Zostało ${zl(limit - st.spent)} z ${zlShort(limit)}`}</div>`
+        : `<div class="of">Limit ustawisz w Budżecie</div>`}
+      ${ps && ps.free > 0 ? `<div class="proj">Na dzień zostaje ${zl(ps.perDay)}</div>` : ''}
+      ${proj ? `<div class="proj">Przy tym tempie ok. ${zlShort(proj)} na koniec miesiąca</div>` : ''}
+      ${st.saved > 0 ? `<div class="saved">Oszczędzone na promocjach: ${zl(st.saved)}</div>` : ''}
+    </div></div>
+    ${alerts ? `<h2>Warto sprawdzić</h2><div class="list">${alerts}</div>` : ''}
+    ${S.receipts.length === 0 ? `<div class="card empty"><b>Dodaj pierwszy paragon</b><p>Wpisz go ręcznie albo zrób zdjęcie. Z kilku paragonów zobaczysz, ile naprawdę płacicie i które promocje się opłacają.</p><button class="btn" data-act="new">Dodaj paragon</button></div>` : ''}
+    ${rows ? `<h2>Na co idą pieniądze</h2><div class="card">${rows}</div>` : ''}
     ${st.rs.length ? `<h2>Ostatnie paragony</h2><div class="list">${[...st.rs].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 3).map(receiptItem).join('')}</div>` : ''}`;
 }
 
+const PSEG = t => `<div class="seg"><button aria-pressed="${t === 'paragony'}" data-act="goto" data-tab="paragony">Paragony</button><button aria-pressed="${t === 'cennik'}" data-act="goto" data-tab="cennik">Cennik</button></div>`;
 function paragony() {
   const q = norm(S.q);
   let rs = [...S.receipts].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
@@ -109,10 +129,10 @@ function paragony() {
     if (!groups.length || groups[groups.length - 1].ym !== ym) groups.push({ ym, items: [] });
     groups[groups.length - 1].items.push(receiptItem(r));
   }
-  const html = groups.map(g => `<h2>${monthName(g.ym)} <span class="sub num" style="font-weight:600">· ${zl(monthStats(S.receipts, g.ym).spent)}</span></h2><div class="list">${g.items.join('')}</div>`).join('');
-  return `<div class="head"><div><h1>Paragony</h1><p class="sub">${S.receipts.length} zapisanych</p></div><button class="btn sm" data-act="new">Dodaj</button></div>
+  const html = groups.map(g => `<h2>${monthName(g.ym)}, <span class="num">${zl(monthStats(S.receipts, g.ym).spent)}</span></h2><div class="list">${g.items.join('')}</div>`).join('');
+  return `<div class="head"><div><h1>Paragony</h1><p class="sub">${S.receipts.length} zapisanych</p></div><button class="btn sm" data-act="new">Dodaj</button></div>${PSEG('paragony')}
     <label class="field"><span>Szukaj sklepu lub produktu</span><input type="search" data-q="1" value="${esc(S.q)}" placeholder="np. karkówka"></label>
-    ${rs.length ? html : `<div class="empty"><div class="big">🧾</div><b>${q ? 'Nic nie znaleziono' : 'Brak paragonów'}</b><p>${q ? 'Spróbuj innej nazwy.' : 'Dodaj pierwszy paragon, a zbudujemy z niego Wasz cennik.'}</p>${q ? '' : '<button class="btn" data-act="new">Dodaj paragon</button>'}</div>`}`;
+    ${rs.length ? html : `<div class="empty"><b>${q ? 'Nic nie znaleziono' : 'Brak paragonów'}</b><p>${q ? 'Spróbuj innej nazwy.' : 'Dodaj pierwszy paragon, a zbudujemy z niego Wasz cennik.'}</p>${q ? '' : '<button class="btn" data-act="new">Dodaj paragon</button>'}</div>`}`;
 }
 
 function cennik() {
@@ -121,15 +141,15 @@ function cennik() {
   const usedCats = [...new Set(prods.map(p => p.cat))];
   let list = prods.filter(p => (!S.cat || p.cat === S.cat) && (!q || p.key.includes(q)));
   list.sort((a, b) => b.n - a.n || (a.name < b.name ? -1 : 1));
-  const chips = `<div class="chips"><button class="chip" aria-pressed="${!S.cat}" data-act="cat" data-c="">Wszystko</button>${CATS.filter(c => usedCats.includes(c.id)).map(c => `<button class="chip" aria-pressed="${S.cat === c.id}" data-act="cat" data-c="${c.id}">${c.e} ${c.n}</button>`).join('')}</div>`;
+  const chips = `<div class="chips"><button class="chip" aria-pressed="${!S.cat}" data-act="cat" data-c="">Wszystko</button>${CATS.filter(c => usedCats.includes(c.id)).map(c => `<button class="chip" aria-pressed="${S.cat === c.id}" data-act="cat" data-c="${c.id}">${c.n}</button>`).join('')}</div>`;
   const items = list.map(p => {
     const dev = p.n >= 3 && p.med ? (p.last - p.med) / p.med : 0;
     const tr = p.n >= 3 ? (dev > 0.05 ? `<small class="up">▲ ${Math.round(dev * 100)}% ponad zwykłą</small>` : dev < -0.05 ? `<small class="down">▼ ${Math.round(-dev * 100)}% poniżej zwykłej</small>` : '<small>cena zwykła</small>') : `<small>${p.n} ${p.n === 1 ? 'zakup' : 'zakupy'}</small>`;
-    return `<button class="item" data-act="product" data-k="${esc(p.key)}"><span class="em">${catById(p.cat).e}</span><span class="mid"><span class="t">${esc(p.name)}</span><span class="s">${esc(p.lastStore)} · ${fmtDate(p.lastDate)}</span></span><span class="r num">${zl(p.last)}/${p.unit}${tr}</span></button>`;
+    return `<button class="item" data-act="product" data-k="${esc(p.key)}"><span class="em">${ic(p.cat)}</span><span class="mid"><span class="t">${esc(p.name)}</span><span class="s">${esc(p.lastStore)}, ${fmtDate(p.lastDate)}</span></span><span class="r num">${zl(p.last)}/${p.unit}${tr}</span></button>`;
   }).join('');
-  return `<div class="head"><div><h1>Cennik</h1><p class="sub">Ceny z Waszych paragonów</p></div></div>
+  return `<div class="head"><div><h1>Cennik</h1><p class="sub">Ceny z Waszych paragonów</p></div></div>${PSEG('cennik')}
     <label class="field"><span>Szukaj produktu</span><input type="search" data-q="1" value="${esc(S.q)}" placeholder="np. mleko"></label>${prods.length ? chips : ''}
-    ${list.length ? `<div class="list">${items}</div>` : `<div class="empty"><div class="big">🏷️</div><b>${prods.length ? 'Nic nie znaleziono' : 'Cennik jest pusty'}</b><p>${prods.length ? 'Zmień filtr lub wyszukiwanie.' : 'Pojawi się sam, gdy dodasz paragony. Im więcej zakupów, tym dokładniejsza ocena promocji.'}</p></div>`}`;
+    ${list.length ? `<div class="list">${items}</div>` : `<div class="empty"><b>${prods.length ? 'Nic nie znaleziono' : 'Cennik jest pusty'}</b><p>${prods.length ? 'Zmień filtr lub wyszukiwanie.' : 'Pojawi się sam, gdy dodasz paragony. Im więcej zakupów, tym dokładniejsza ocena promocji.'}</p></div>`}`;
 }
 
 const RANK = { best: 0, good: 1, slight: 2, norm: 3, few: 4, nodata: 5, bad: 6 };
@@ -162,7 +182,7 @@ async function fetchSrv(manual) {
 }
 const UNIT_LBL = { l: 'l', kg: 'kg', szt: 'szt' };
 
-const promoPill = o => { const t = promoLabel(o, zl); return t ? `<span class="pill promo">🏷️ ${esc(t)}</span>` : ''; };
+const promoPill = o => { const t = promoLabel(o, zl); return t ? `<span class="pill promo">${esc(t)}</span>` : ''; };
 const depositLine = o => (o.deposit ? `<span class="hint">+ kaucja ${zl(o.deposit)} (poza ceną)</span>` : '');
 const whereLine = o => { const w = whereLabel(o); return w ? `<span class="hint">Szukaj: ${esc(w)}</span>` : ''; };
 const onList = o => S.kv.lista.some(i => i.offerId === o.id);
@@ -177,18 +197,17 @@ function offerCard(o, v) {
   return `<div class="ofw">${offerBody(o, v)}${addBtn(o)}</div>`;
 }
 function offerBody(o, v) {
-  const c = offerCalc(o), multi = isMulti(o), hid = isHidden(o);
-  if (!isSure(o)) return `<button class="offer${hid ? ' unsure' : ''}" data-act="offer" data-id="${o.id}"><span class="em">${catById(o.cat).e}</span>
-    <span class="mid"><span class="t">${esc(o.name)}</span><span class="hint">${esc(o.store)} · do ${fmtDate(o.until)}${o.cond ? ' · ' + esc(o.cond) : ''}</span>
-      ${promoPill(o)}${o.printed ? `<span class="hint">${hid ? 'Na gazetce' : 'W sklepie'}: ${esc(o.printed)}</span>` : ''}${whereLine(o)}<span class="pill nodata">${hid ? 'odczyt niepewny' : 'bez ceny za jednostkę'}</span></span>
-    <span class="p num"><b>${zl(c.total)}</b><small>${hid ? 'cena z odczytu' : 'za opakowanie'}</small>${o.old ? `<s>${zl(o.old)}</s>` : ''}</span></button>`;
+  const c = offerCalc(o), multi = isMulti(o), hid = isHidden(o), meta = `<span class="hint">${esc(o.store)}, do ${fmtDate(o.until)}${o.cond ? ', ' + esc(o.cond) : ''}</span>`;
+  if (!isSure(o)) return `<button class="offer${hid ? ' unsure' : ''}" data-act="offer" data-id="${o.id}">
+    <span class="mid"><span class="t">${esc(o.name)}</span>${meta}
+      ${o.printed ? `<span class="hint">${hid ? 'Na gazetce' : 'W sklepie'}: ${esc(o.printed)}</span>` : ''}${whereLine(o)}${promoPill(o)}<span class="pill nodata">${hid ? 'odczyt niepewny' : 'bez ceny za jednostkę'}</span></span>
+    <span class="p">${pr(c.total)}<small>${hid ? 'cena z odczytu' : 'za opakowanie'}</small>${o.old ? `<s class="num">${zl(o.old)}</s>` : ''}</span></button>`;
   const u = unitPrice(o);
-  return `<button class="offer" data-act="offer" data-id="${o.id}"><span class="em">${catById(o.cat).e}</span>
-    <span class="mid"><span class="t">${esc(o.name)}</span><span class="hint">${esc(o.store)} · do ${fmtDate(o.until)}${o.cond ? ' · ' + esc(o.cond) : ''}</span>
-      ${promoPill(o)}
+  return `<button class="offer" data-act="offer" data-id="${o.id}">
+    <span class="mid"><span class="t">${esc(o.name)}</span>${meta}
       <span class="hint">${multi ? 'Komplet' : 'Opakowanie'}: <b>${esc(packLabel(o))}</b></span>
-      <span class="uprice">Za ${esc(u.label)}: <b>${zl(u.price)}</b></span>${depositLine(o)}${whereLine(o)}${v ? `<span class="pill ${v.t}">${esc(v.txt)}</span>` : ''}</span>
-    <span class="p num"><b>${zl(c.total)}</b><small>${multi ? 'za komplet' : 'za opakowanie'}</small>${o.old ? `<s>${zl(o.old)}</s>` : ''}</span></button>`;
+      <span class="uprice">Za ${esc(u.label)}: <b>${zl(u.price)}</b></span>${depositLine(o)}${whereLine(o)}${promoPill(o)}${v && v.t !== 'nodata' && v.t !== 'few' ? `<span class="pill ${v.t}">${esc(v.txt)}</span>` : ''}</span>
+    <span class="p">${pr(c.total, multi || o.old)}<small>${multi ? 'za komplet' : 'za opakowanie'}</small>${o.old ? `<s class="num">${zl(o.old)}</s>` : ''}</span></button>`;
 }
 
 function okazje() {
@@ -209,18 +228,18 @@ function okazje() {
         <span class="mid"><span class="t">${esc(r.o.store)}</span><span class="hint">${esc(r.o.name)}</span>${promoPill(r.o)}
           <span class="hint">${multi ? 'Komplet' : 'Opakowanie'}: <b>${esc(packLabel(r.o))}</b></span>
           <span class="uprice">Za ${esc(u.label)}: <b>${zl(u.price)}</b>${r.rank > 1 ? ` <em>+${Math.round(r.over * 100)}%</em>` : ' <em class="bestt">najtaniej</em>'}</span>${depositLine(r.o)}${whereLine(r.o)}</span>
-        <span class="p num"><b>${zl(r.c.total)}</b><small>${multi ? 'za komplet' : 'za opakowanie'}</small></span></button>${addBtn(r.o)}</div>`; }).join('');
+        <span class="p">${pr(r.c.total, r.rank === 1)}<small>${multi ? 'za komplet' : 'za opakowanie'}</small></span></button>${addBtn(r.o)}</div>`; }).join('');
       return `<div class="card cmp"><div class="cmp-h"><b>${esc(g.fam.n)}</b><span class="hint">najtaniej: ${esc(b.o.store)}, ${zl(unitPrice(b.o, g.per).price)} za ${esc(unitPrice(b.o, g.per).label)}</span></div>${rows}</div>`;
-    }).join('') + '</div><p class="hint" style="text-align:center">Porównuję ten sam rodzaj produktu po cenie za litr, kilogram lub sztukę. Marki mogą się różnić, więc sprawdź, czy to naprawdę to, czego szukasz.' + (nUnsure ? ' Oferty z niepewnym odczytem nie biorą udziału w porównaniu.' : '') + '</p>'
-      : `<div class="empty"><div class="big">⚖️</div><b>Na razie nie ma czego porównać</b><p>Porównanie pojawi się, gdy dodasz dwie aktywne okazje na podobny produkt (np. cola w Lidlu i w Kauflandzie).</p><button class="btn" data-act="newoffer">Dodaj okazję</button></div>`;
+    }).join('') + '</div><p class="note">Porównuję ten sam rodzaj produktu po cenie za litr, kilogram lub sztukę. Marki mogą się różnić, więc sprawdź, czy to naprawdę to, czego szukasz.' + (nUnsure ? ' Oferty z niepewnym odczytem nie biorą udziału w porównaniu.' : '') + '</p>'
+      : `<div class="empty"><b>Na razie nie ma czego porównać</b><p>Porównanie pojawi się, gdy dodasz dwie aktywne okazje na podobny produkt (np. cola w Lidlu i w Kauflandzie).</p><button class="btn" data-act="newoffer">Dodaj okazję</button></div>`;
   } else {
     const used = [...new Set(act.map(o => o.cat))];
     const q = normQ(S.oq).trim();
     const list = act.filter(o => (!S.ocat || (S.ocat === '__multi' ? isMulti(o) : o.cat === S.ocat)) && (!q || normQ(o.store + ' ' + o.name).includes(q))).map(o => ({ o, v: isSure(o) ? offerVerdict(o) : null }));
     list.sort((a, b) => (!a.v - !b.v) || (a.v ? RANK[a.v.t] - RANK[b.v.t] : 0) || (isMulti(b.o) - isMulti(a.o)) || a.o.name.localeCompare(b.o.name, 'pl'));
     const nMulti = act.filter(isMulti).length;
-    const chips = `<div class="chips"><button class="chip" aria-pressed="${!S.ocat}" data-act="ocat" data-c="">Wszystko</button>${nMulti ? `<button class="chip" aria-pressed="${S.ocat === '__multi'}" data-act="ocat" data-c="__multi">🏷️ Komplety i 2+1 (${nMulti})</button>` : ''}${CATS.filter(c => used.includes(c.id)).map(c => `<button class="chip" aria-pressed="${S.ocat === c.id}" data-act="ocat" data-c="${c.id}">${c.e} ${c.n}</button>`).join('')}</div>`;
-    body = (act.length ? `<input class="search" id="oq" type="search" placeholder="Szukaj okazji, np. masło" value="${esc(S.oq)}" autocomplete="off">` + chips : '') + unsureBar + (list.length ? `<div class="list grid">${list.map(({ o, v }) => offerCard(o, v)).join('')}</div>` : `<div class="empty"><div class="big">⚡</div><b>${act.length ? 'Nic nie pasuje' : nUnsure ? 'Brak potwierdzonych ofert' : 'Brak aktywnych okazji'}</b><p>${act.length ? 'Zmień wyszukiwanie lub kategorię.' : 'Dodaj promocję ręcznie albo podłącz serwer z ofertami w Ustawieniach.'}</p>${act.length ? '' : '<button class="btn" data-act="newoffer">Dodaj okazję</button>'}</div>`);
+    const chips = `<div class="chips"><button class="chip" aria-pressed="${!S.ocat}" data-act="ocat" data-c="">Wszystko</button>${nMulti ? `<button class="chip" aria-pressed="${S.ocat === '__multi'}" data-act="ocat" data-c="__multi">Komplety i 2+1 (${nMulti})</button>` : ''}${CATS.filter(c => used.includes(c.id)).map(c => `<button class="chip" aria-pressed="${S.ocat === c.id}" data-act="ocat" data-c="${c.id}">${c.n}</button>`).join('')}</div>`;
+    body = (act.length ? `<input class="search" id="oq" type="search" placeholder="Szukaj okazji, np. masło" value="${esc(S.oq)}" autocomplete="off">` + chips : '') + unsureBar + (list.length ? `<div class="list grid">${list.map(({ o, v }) => offerCard(o, v)).join('')}</div>` : `<div class="empty"><b>${act.length ? 'Nic nie pasuje' : nUnsure ? 'Brak potwierdzonych ofert' : 'Brak aktywnych okazji'}</b><p>${act.length ? 'Zmień wyszukiwanie lub kategorię.' : 'Dodaj promocję ręcznie albo podłącz serwer z ofertami w Ustawieniach.'}</p>${act.length ? '' : '<button class="btn" data-act="newoffer">Dodaj okazję</button>'}</div>`);
   }
   return `<div class="head"><div><h1>Okazje</h1><p class="sub">${S.omode === 'porownanie' ? 'Która oferta wychodzi taniej' : 'Oceniane względem Waszych cen'}</p></div><button class="btn sm" data-act="newoffer">Dodaj</button></div>
     ${seg}${body}
@@ -228,22 +247,75 @@ function okazje() {
 }
 
 function lista() {
+  const seg = `<div class="seg">${[['zakupy', 'Zakupy'], ['koszyk', 'Koszyk'], ['stale', 'Stałe']].map(([m, n]) => `<button aria-pressed="${S.lmode === m}" data-act="lmode" data-m="${m}">${n}</button>`).join('')}</div>`;
+  if (S.lmode === 'koszyk') return `<div class="head"><div><h1>Najtańszy koszyk</h1><p class="sub">Co wziąć w którym sklepie</p></div></div>${seg}${koszyk()}`;
+  if (S.lmode === 'stale') return `<div class="head"><div><h1>Stałe produkty</h1><p class="sub">Dam znać, gdy są w ofercie</p></div></div>${seg}${stale()}`;
   const items = S.kv.lista, stores = [...new Set(items.map(i => i.store))].sort((a, b) => a.localeCompare(b, 'pl'));
   if (S.lstore && !stores.includes(S.lstore)) S.lstore = '';
   const groups = byStore(items, S.lstore), today = todayISO();
   const left = items.filter(i => !i.done).length, done = items.filter(i => i.done).length;
-  const head = `<div class="head"><div><h1>Lista</h1><p class="sub">${items.length ? `Do kupienia: ${left}` : 'Zakupy sklep po sklepie'}</p></div><button class="btn sm" data-act="newitem">Dodaj</button></div>`;
-  if (!items.length) return head + `<div class="empty"><div class="big">🛒</div><b>Lista jest pusta</b><p>W Okazjach naciśnij „+” przy ofercie albo dodaj produkt ręcznie.</p><button class="btn" data-act="goto" data-tab="okazje">Przejdź do okazji</button></div>`;
+  const head = `<div class="head"><div><h1>Lista</h1><p class="sub">${items.length ? `Do kupienia: ${left}` : 'Zakupy sklep po sklepie'}</p></div><button class="btn sm" data-act="newitem">Dodaj</button></div>${seg}`;
+  if (!items.length) return head + `<div class="empty"><b>Lista jest pusta</b><p>W Okazjach naciśnij „+” przy ofercie albo dodaj produkt ręcznie.</p><button class="btn" data-act="goto" data-tab="okazje">Przejdź do okazji</button></div>`;
   const chips = stores.length > 1 ? `<div class="chips"><button class="chip" aria-pressed="${!S.lstore}" data-act="lstore" data-s="">Wszystkie sklepy</button>${stores.map(s => `<button class="chip" aria-pressed="${S.lstore === s}" data-act="lstore" data-s="${esc(s)}">${esc(s)} (${items.filter(i => i.store === s && !i.done).length})</button>`).join('')}</div>` : '';
   const row = i => {
     const warn = i.until && i.until < today ? `<span class="up">Oferta skończyła się ${fmtDate(i.until)}</span>` : i.from && i.from > today ? `<span class="up">Oferta dopiero od ${fmtDate(i.from)}</span>` : '';
     return `<div class="li${i.done ? ' done' : ''}"><button class="li-main" data-act="ltoggle" data-id="${esc(i.id)}" aria-pressed="${!!i.done}"><span class="li-check">${i.done ? '✓' : ''}</span>
-      <span class="mid"><span class="t">${esc(i.name)}</span>${i.promo ? `<span class="pill promo">🏷️ ${esc(i.promo)}</span>` : ''}${i.pack ? `<span class="hint">${esc(i.pack)}</span>` : ''}${i.cond ? `<span class="hint"><b>Warunek:</b> ${esc(i.cond)}</span>` : ''}${i.where ? `<span class="hint">Szukaj: ${esc(i.where)}</span>` : ''}${i.deposit ? `<span class="hint">+ kaucja ${zl(i.deposit)}</span>` : ''}${i.unsure ? '<span class="hint">Odczyt niepewny, sprawdź cenę w sklepie</span>' : ''}${warn}</span>
-      ${i.price ? `<span class="p num"><b>${zl(i.price * (i.qty || 1))}</b></span>` : ''}</button>
-      <div class="li-q"><button data-act="lqty" data-id="${esc(i.id)}" data-d="-1" aria-label="${(i.qty || 1) > 1 ? 'Mniej' : 'Usuń z listy'}">${(i.qty || 1) > 1 ? '−' : '×'}</button><b>${i.qty || 1}</b><button data-act="lqty" data-id="${esc(i.id)}" data-d="1" aria-label="Więcej">+</button></div></div>`;
+      <span class="mid"><span class="t">${esc(i.name)}</span>${i.pack ? `<span class="hint">${esc(i.pack)}</span>` : ''}${i.cond ? `<span class="hint">Warunek: ${esc(i.cond)}</span>` : ''}${i.where ? `<span class="hint">Szukaj: ${esc(i.where)}</span>` : ''}${i.deposit ? `<span class="hint">+ kaucja ${zl(i.deposit)}</span>` : ''}${i.unsure ? '<span class="hint">Odczyt niepewny, sprawdź cenę w sklepie</span>' : ''}${warn}${i.promo ? `<span class="pill promo">${esc(i.promo)}</span>` : ''}</span>
+      </button>
+      <div class="li-r">${i.price ? `<span class="p">${zl(i.price * (i.qty || 1))}</span>` : ''}<div class="li-q"><button data-act="lqty" data-id="${esc(i.id)}" data-d="-1" aria-label="${(i.qty || 1) > 1 ? 'Mniej' : 'Usuń z listy'}">${(i.qty || 1) > 1 ? '−' : '×'}</button><b>${i.qty || 1}</b><button data-act="lqty" data-id="${esc(i.id)}" data-d="1" aria-label="Więcej">+</button></div></div></div>`;
   };
-  return head + chips + groups.map(g => `<section class="card lgroup"><div class="lg-h"><h2>${esc(g.store)}</h2><span class="hint">${g.left ? `${g.left} do kupienia` : 'wszystko kupione'}${g.sum ? ` · ${zl(g.sum)}` : ''}${g.noPrice ? ' + bez ceny' : ''}</span></div>${g.items.map(row).join('')}</section>`).join('')
+  return head + chips + groups.map(g => `<section class="card lgroup"><div class="lg-h"><h2>${esc(g.store)}</h2><span class="hint">${g.left ? `${g.left} do kupienia` : 'wszystko kupione'}${g.sum ? `, ${zl(g.sum)}` : ''}${g.noPrice ? ' + bez ceny' : ''}</span></div>${g.items.map(row).join('')}</section>`).join('')
     + (done ? `<p style="text-align:center"><button class="lnk" data-act="lclear">Usuń kupione (${done})</button></p>` : '');
+}
+const addForm = (form, ph, label = 'Dodaj') => `<form class="addrow" data-form="${form}"><input name="v" placeholder="${ph}" list="prod" autocomplete="off" aria-label="${ph}"><button class="btn">${label}</button></form>`;
+const delX = (act, id) => `<button class="x" data-act="${act}" data-id="${esc(id)}" aria-label="Usuń" style="background:none">×</button>`;
+function koszyk() {
+  const today = todayISO(), wish = S.kv.chce, b = basket(wish.map(w => w.name), allOffers(), today);
+  const unused = S.kv.stale.filter(s => !wish.some(w => norm(w.name) === norm(s.name)));
+  const form = addForm('chce', 'Czego szukasz, np. masło') + (unused.length ? `<p style="margin:-6px 0 14px"><button class="lnk" data-act="wishstale">Dodaj stałe produkty (${unused.length})</button></p>` : '');
+  if (!wish.length) return form + `<div class="empty"><b>Wpisz, co chcesz kupić</b><p>Znajdę najtańszą ofertę na każdy produkt i podzielę zakupy na sklepy.</p></div>`;
+  const id = name => wish.find(w => w.name === name).id;
+  const row = r => { const u = unitPrice(r.o); return `<div class="li"><div class="li-main" style="cursor:default"><span class="mid"><span class="t">${esc(r.name)}</span><span class="hint">${esc(r.o.name)}</span><span class="hint">${esc(packLabel(r.o))}, ${zl(u.price)} za ${esc(u.label)}${r.alts ? `, sprawdzono jeszcze ${r.alts}` : ''}</span>${r.o.cond ? `<span class="hint">Warunek: ${esc(r.o.cond)}</span>` : ''}${promoPill(r.o)}</span><span class="p">${zl(r.c.total)}</span></div>${delX('wishdel', id(r.name))}</div>`; };
+  return form + (b.found ? `<div class="total"><div><span class="hint">Razem w ${b.stores.length} ${b.stores.length === 1 ? 'sklepie' : 'sklepach'}</span><br>${pr(b.total)}</div><button class="btn sm" data-act="wishadd">Dodaj na listę</button></div>` : '')
+    + b.stores.map(g => `<section class="card lgroup"><div class="lg-h"><h2>${esc(g.store)}</h2><span class="hint">${zl(g.sum)}</span></div>${g.rows.map(row).join('')}</section>`).join('')
+    + (b.missing.length ? `<section class="card lgroup"><div class="lg-h"><h2>Bez oferty</h2><span class="hint">nie ma w ofertach</span></div>${b.missing.map(n => `<div class="li"><div class="li-main" style="cursor:default"><span class="mid"><span class="t">${esc(n)}</span></span></div>${delX('wishdel', id(n))}</div>`).join('')}</section>` : '')
+    + `<p class="note">Biorę najniższą cenę za litr, kilogram lub sztukę. Suma to cena opakowań i kompletów z ofert, bez kaucji.</p>`;
+}
+function stale() {
+  const today = todayISO(), all = allOffers();
+  const row = i => { const m = matchOffers(i.name, all, today), b = m[0], u = b && unitPrice(b.o);
+    return `<div class="pz"><span class="mid"><span class="t">${esc(i.name)}</span><span class="s">${b ? `${esc(b.o.store)}, ${zl(b.c.total)}, ${zl(u.price)} za ${esc(u.label)}` : 'Teraz nie ma w ofertach'}</span></span>${b ? addBtn(b.o).replace('class="addl', 'style="position:static" class="addl') : ''}${delX('staledel', i.id)}</div>`; };
+  return addForm('stale', 'Co kupujesz regularnie, np. kawa') + (S.kv.stale.length ? `<div class="list">${S.kv.stale.map(row).join('')}</div><p class="note">Gdy produkt pojawi się w ofercie, zobaczysz to na ekranie Start.</p>` : `<div class="empty"><b>Dodaj produkty, które kupujesz stale</b><p>Kawa, papier toaletowy, mleko. Nie trzeba przeglądać setek ofert, wystarczy spojrzeć na Start.</p></div>`);
+}
+function spizarnia() {
+  const items = S.kv.spiz, low = pantryLow(items);
+  const row = i => `<div class="pz${i.qty <= i.min ? ' low' : ''}"><span class="mid"><span class="t">${esc(i.name)}</span><span class="s">${i.qty <= i.min ? 'Kończy się' : 'Jest w domu'}, minimum ${i.min}</span></span><div class="li-q"><button data-act="pqty" data-id="${esc(i.id)}" data-d="-1" aria-label="Mniej">−</button><b>${i.qty}</b><button data-act="pqty" data-id="${esc(i.id)}" data-d="1" aria-label="Więcej">+</button></div>${delX('pdel', i.id)}</div>`;
+  return `<div class="head"><div><h1>Spiżarnia</h1><p class="sub">Co jest w domu, a co się kończy</p></div></div>
+    ${addForm('spiz', 'Co masz w domu, np. ryż')}
+    ${items.length ? `${low.length ? `<div class="total"><span>Kończy się: <b>${low.length}</b></span><button class="btn sm" data-act="plist">Dodaj na listę</button></div>` : ''}<div class="list">${[...items].sort((a, b) => (a.qty > a.min) - (b.qty > b.min) || a.name.localeCompare(b.name, 'pl')).map(row).join('')}</div><p class="note">Na listę trafi najtańsza oferta, a bez oferty sama nazwa produktu.</p>`
+      : `<div class="empty"><b>Spiżarnia jest pusta</b><p>Dopisz rzeczy, których nie może zabraknąć. Gdy zejdziesz do minimum, zobaczysz to na ekranie Start.</p></div>`}`;
+}
+function wiecej() {
+  const it = (t, n, s2, i) => `<button class="item" data-act="goto" data-tab="${t}"><span class="em">${i}</span><span class="mid"><span class="t">${n}</span><span class="s">${s2}</span></span>${ic('dalej', 'go')}</button>`;
+  const svg = id => `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">${ICON[id]}</svg>`;
+  return `<div class="head"><div><h1>Więcej</h1></div></div><div class="list">${it('spizarnia', 'Spiżarnia', 'Zapasy w domu', svg('spizarnia'))}${it('budzet', 'Budżet i plan miesiąca', 'Limit i zaplanowane wydatki', svg('budzet'))}${it('ustawienia', 'Ustawienia', 'Oferty, klucz, kopia danych', svg('ustawienia'))}</div>`;
+}
+function monthPlan() {
+  const ym = NOW_YM(), st = monthStats(S.receipts, ym), d = new Date();
+  const listSum = S.kv.lista.filter(i => !i.done).reduce((a, i) => a + (i.price || 0) * (i.qty || 1), 0);
+  return { ...planSummary({ limit: S.kv.limit || 0, spent: st.spent, plan: S.kv.plan[ym] || [], listSum, day: d.getDate(), days: daysInMonth(ym) }), listSum };
+}
+async function setPlan(ym, rows) { S.kv.plan = { ...S.kv.plan, [ym]: rows }; await kvSet('plan', S.kv.plan); render(); }
+async function addOfferBest(names) {
+  const today = todayISO(), all = allOffers(); let n = 0;
+  const add = [];
+  for (const name of names) {
+    const m = matchOffers(name, all, today)[0];
+    const it = m ? { ...itemFromOffer(m.o, zl), name: m.o.name } : manualItem(uid(), name, 'Dowolny sklep');
+    if (m ? S.kv.lista.some(i => i.offerId === m.o.id) : S.kv.lista.some(i => norm(i.name) === norm(name))) continue;
+    add.push(it); n++;
+  }
+  S.kv.lista = [...S.kv.lista, ...add]; await saveList(); return n;
 }
 function openNewItem() {
   let store = S.lstore || S.lastStore;
@@ -264,14 +336,20 @@ function budzet() {
   const mx = Math.max(limit, ...tots.map(t => t.spent), 1);
   const H = 76;
   const hist = `<div class="hist" style="position:relative">${tots.map(t => `<div class="col ${t.ym === ym ? 'cur' : ''}"><i style="height:${Math.max(3, (t.spent / mx) * H)}px"></i><span>${monthShort(t.ym)}</span></div>`).join('')}${limit ? `<div class="lim" style="bottom:${23 + (limit / mx) * H}px"></div>` : ''}</div>`;
+  const plan = S.kv.plan[ym] || [], ps = monthPlan();
+  const pRows = plan.map(p => `<div class="pz" style="padding-left:0"><button class="li-check" data-act="plandone" data-id="${esc(p.id)}" aria-pressed="${!!p.done}" aria-label="Zrobione" style="border:0;${p.done ? 'background:var(--ink)' : 'background:none'}">${p.done ? '✓' : ''}</button><span class="mid"><span class="t"${p.done ? ' style="text-decoration:line-through;opacity:.5"' : ''}>${esc(p.name)}</span></span><b class="num">${zl(p.amount)}</b>${delX('plandel', p.id)}</div>`).join('');
   const rows = CATS.map(c => {
     const v = st.cats[c.id] || 0, l = cl[c.id] || 0;
     if (!v && !l) return '';
     const p = l ? Math.min(100, (v / l) * 100) : 0;
-    return `<button class="catrow" data-act="catlimit" data-c="${c.id}"><span class="em">${c.e}</span><span class="mid"><span>${c.n}</span>${l ? `<div class="bar ${v > l ? 'over' : ''}"><i style="width:${p}%"></i></div>` : ''}</span><span class="v">${zl(v)}${l ? `<br><small class="${v > l ? 'up' : ''}" style="font-weight:600;color:${v > l ? '' : 'var(--mut)'}">z ${zlShort(l)}</small>` : ''}</span></button>`;
+    return `<button class="catrow" data-act="catlimit" data-c="${c.id}"><span class="em">${ic(c.id)}</span><span class="mid"><span>${c.n}</span>${l ? `<div class="bar ${v > l ? 'over' : ''}"><i style="width:${p}%"></i></div>` : ''}</span><span class="v">${zl(v)}${l ? `<br><small class="${v > l ? 'up' : ''}" style="font-weight:500;color:${v > l ? '' : 'var(--mut)'}">z ${zlShort(l)}</small>` : ''}</span></button>`;
   }).join('');
   return `<div class="head"><div><h1>Budżet</h1><p class="sub">${monthName(ym)}</p></div></div>
     <div class="card"><label class="field" style="margin:0"><span>Limit miesięczny na zakupy (zł)</span><div class="row" style="flex-wrap:nowrap"><input id="limit" inputmode="decimal" value="${limit ? centsToInput(limit).replace(',00', '') : ''}" placeholder="np. 3000"><button class="btn" data-act="savelimit">Zapisz</button></div></label></div>
+    <h2>Plan miesiąca</h2><div class="card">
+      <form class="addrow" data-form="plan"><input name="v" placeholder="Na co" autocomplete="off" aria-label="Na co"><input name="a" inputmode="decimal" placeholder="zł" aria-label="Kwota" style="flex:none;width:92px"><button class="btn">Dodaj</button></form>
+      ${pRows}
+      ${limit ? `<div class="kv"><span>Limit</span><b>${zl(limit)}</b></div><div class="kv"><span>Wydane</span><b>${zl(st.spent)}</b></div><div class="kv"><span>Zaplanowane</span><b>${zl(ps.planned)}</b></div>${ps.listSum ? `<div class="kv"><span>Na liście zakupów</span><b>${zl(ps.listSum)}</b></div>` : ''}<div class="kv"><span>Wolne</span><b class="${ps.free < 0 ? 'up' : ''}">${zl(ps.free)}</b></div><div class="kv"><span>Na dzień, zostało dni: ${ps.left}</span><b>${zl(ps.perDay)}</b></div>` : '<p class="hint" style="margin:0">Ustaw limit powyżej, a policzę, ile zostaje na dzień.</p>'}</div>
     <h2>Ostatnie 6 miesięcy</h2><div class="card">${hist}<p class="hint" style="margin:6px 0 0">${limit ? 'Przerywana linia to Wasz limit.' : 'Po ustawieniu limitu zobaczysz tu linię limitu.'}</p></div>
     <h2>Ten miesiąc wg kategorii</h2><div class="card">${rows || '<p class="hint" style="margin:0">Po dodaniu paragonów zobaczysz tu podział wydatków. Dotknij kategorii, żeby ustawić jej limit.</p>'}</div>
     `;
@@ -404,10 +482,11 @@ function askKey() {
 }
 
 function pickCat(cur, cb) {
-  const el = sheet('Kategoria', `<div class="picker">${CATS.map(c => `<button class="chip ${c.id === cur ? 'on' : ''}" data-c="${c.id}">${c.e} ${c.n}</button>`).join('')}</div>`);
+  const el = sheet('Kategoria', `<div class="picker">${CATS.map(c => `<button class="chip ${c.id === cur ? 'on' : ''}" data-c="${c.id}">${ic(c.id)}${c.n}</button>`).join('')}</div>`);
   el.addEventListener('click', e => { const b = e.target.closest('[data-c]'); if (b) { cb(b.dataset.c); el.close(); } });
 }
 
+const setLineCat = (row, c) => { const b = row.querySelector('.ln-cat'); b.dataset.c = c; b.innerHTML = ic(c); b.setAttribute('aria-label', 'Kategoria: ' + catById(c).n); };
 const newLine = () => ({ id: uid(), name: '', cat: 'inne', auto: true, qty: '1', unit: 'szt', total: '', reg: '', showReg: false, chk: false });
 
 function openReceipt(id) {
@@ -418,7 +497,7 @@ function openReceipt(id) {
   } : { id: null, store: S.lastStore, date: todayISO(), declared: '', banner: false, lines: [newLine()] };
 
   const lineHtml = (l, i) => `<div class="ln ${l.chk ? 'chk' : ''}" data-i="${i}">
-    <button class="ln-cat" data-ea="cat" aria-label="Kategoria">${catById(l.cat).e}</button>
+    <button class="ln-cat" data-ea="cat" data-c="${l.cat}" aria-label="Kategoria: ${catById(l.cat).n}">${ic(l.cat)}</button>
     <div class="ln-main"><input class="f-name" list="prod" placeholder="Nazwa produktu" value="${esc(l.name)}" autocomplete="off">
       <div class="ln-row"><input class="f-qty" inputmode="decimal" value="${esc(l.qty)}" aria-label="Ilość"><select class="f-unit" aria-label="Jednostka">${['szt', 'kg', 'l'].map(u => `<option ${u === l.unit ? 'selected' : ''}>${u}</option>`).join('')}</select>
         <input class="f-total" inputmode="decimal" placeholder="Cena razem" value="${esc(l.total)}" aria-label="Cena razem"><button class="ln-del" data-ea="del" aria-label="Usuń pozycję">×</button></div>
@@ -430,9 +509,9 @@ function openReceipt(id) {
   function paint() {
     body.innerHTML = `<div class="chips" role="group" aria-label="Sklep">${STORES.map(s => `<button class="chip" aria-pressed="${s === d.store}" data-ea="store" data-s="${s}">${s}</button>`).join('')}</div>
       <label class="field"><span>Data zakupów</span><input type="date" class="f-date" value="${d.date}" max="${todayISO()}"></label>
-      <button class="btn" style="width:100%;margin-bottom:6px" data-ea="photo">📷 Zrób zdjęcie paragonu</button>
+      <button class="btn" style="width:100%;margin-bottom:6px" data-ea="photo">${ic('aparat')}Zrób zdjęcie paragonu</button>
       <p class="hint" style="margin:0 0 16px;text-align:center">Odczytam pozycje, Ty tylko sprawdzisz. Możesz też wybrać zdjęcie z galerii albo wpisać ręcznie poniżej.</p><input type="file" class="f-photo" accept="image/*" hidden>
-      ${d.banner ? `<div class="stat warn" style="background:#FFF6D9;color:#5A4300">Odczytano ze zdjęcia. Sprawdź każdą żółtą pozycję z paragonem w ręku. <button class="lnk" data-ea="checked">Sprawdziłem</button></div>` : ''}
+      ${d.banner ? `<div class="stat read">Odczytano ze zdjęcia. Sprawdź każdą żółtą pozycję z paragonem w ręku. <button class="lnk" data-ea="checked">Sprawdziłem</button></div>` : ''}
       <div id="lines">${d.lines.map(lineHtml).join('')}</div>
       <button class="btn line sm" data-ea="add">+ Dodaj pozycję</button>
       <label class="field" style="margin-top:18px"><span>Suma na paragonie (do sprawdzenia)</span><input class="f-decl" inputmode="decimal" placeholder="np. 87,45" value="${esc(d.declared)}"></label>`;
@@ -456,7 +535,7 @@ function openReceipt(id) {
     if (t.classList.contains('f-date')) d.date = t.value;
     else if (t.classList.contains('f-decl')) d.declared = t.value;
     else if (l) {
-      if (t.classList.contains('f-name')) { l.name = t.value; if (l.auto) { l.cat = catOf(l.name); row.querySelector('.ln-cat').textContent = catById(l.cat).e; } }
+      if (t.classList.contains('f-name')) { l.name = t.value; if (l.auto) { l.cat = catOf(l.name); setLineCat(row, l.cat); } }
       else if (t.classList.contains('f-qty')) l.qty = t.value;
       else if (t.classList.contains('f-unit')) l.unit = t.value;
       else if (t.classList.contains('f-total')) l.total = t.value;
@@ -469,7 +548,7 @@ function openReceipt(id) {
     const t = e.target, row = t.closest('.ln'), l = row && d.lines[+row.dataset.i];
     if (l && t.classList.contains('f-name')) {
       const p = products(S.receipts).find(x => x.key === norm(l.name));
-      if (p) { l.cat = p.cat; l.auto = false; l.unit = p.unit; row.querySelector('.ln-cat').textContent = catById(l.cat).e; row.querySelector('.f-unit').value = l.unit; }
+      if (p) { l.cat = p.cat; l.auto = false; l.unit = p.unit; setLineCat(row, l.cat); row.querySelector('.f-unit').value = l.unit; }
     }
     if (t.classList.contains('f-photo') && t.files[0]) doPhoto(t.files[0]);
   });
@@ -523,9 +602,9 @@ function openProduct(key) {
   const h = p.hist, ups = h.map(e => e.up), lo = Math.min(...ups), hi = Math.max(...ups);
   const W = 300, Hh = 80;
   const pts = h.map((e, i) => `${h.length === 1 ? W / 2 : 8 + (i * (W - 16)) / (h.length - 1)},${hi === lo ? Hh / 2 : 8 + (1 - (e.up - lo) / (hi - lo)) * (Hh - 16)}`);
-  const spark = h.length >= 2 ? `<svg class="spark" viewBox="0 0 ${W} ${Hh}" preserveAspectRatio="none" aria-label="Wykres cen"><polyline fill="none" stroke="var(--green)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" points="${pts.join(' ')}"/>${pts.map(q => `<circle cx="${q.split(',')[0]}" cy="${q.split(',')[1]}" r="3.5" fill="var(--green)"/>`).join('')}</svg>` : '<p class="hint">Wykres pojawi się po drugim zakupie.</p>';
+  const spark = h.length >= 2 ? `<svg class="spark" viewBox="0 0 ${W} ${Hh}" preserveAspectRatio="none" aria-label="Wykres cen"><polyline fill="none" stroke="var(--ink)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" points="${pts.join(' ')}"/>${pts.map(q => `<circle cx="${q.split(',')[0]}" cy="${q.split(',')[1]}" r="3.5" fill="var(--ink)"/>`).join('')}</svg>` : '<p class="hint">Wykres pojawi się po drugim zakupie.</p>';
   const byStore = {}; for (const e of h) byStore[e.store] = Math.min(byStore[e.store] ?? Infinity, e.up);
-  const el = sheet(p.name, `<p class="sub" style="margin:-4px 0 14px">${catById(p.cat).e} ${catById(p.cat).n}</p>
+  const el = sheet(p.name, `<p class="sub" style="margin:-4px 0 14px">${catById(p.cat).n}</p>
     <div class="card">${spark}<div class="kv"><span>Ostatnio</span><b>${zl(p.last)}/${p.unit}</b></div><div class="kv"><span>Najniżej</span><b>${zl(p.min)}/${p.unit}</b></div>
     <div class="kv"><span>Zwykła cena (mediana)</span><b>${p.n >= 3 ? zl(p.med) + '/' + p.unit : 'po 3 zakupach'}</b></div><div class="kv"><span>Liczba zakupów</span><b>${p.n}</b></div></div>
     ${Object.keys(byStore).length > 1 ? `<h2>Najniższa cena wg sklepu</h2><div class="card">${Object.entries(byStore).sort((a, b) => a[1] - b[1]).map(([s, v]) => `<div class="kv"><span>${esc(s)}</span><b>${zl(v)}/${p.unit}</b></div>`).join('')}</div>` : ''}
@@ -550,7 +629,7 @@ function openSrvOffer(o) {
     ${flyerUrl(o) ? `<p><a class="lnk" href="${esc(flyerUrl(o))}" target="_blank" rel="noopener">Otwórz tę stronę gazetki</a></p>` : ''}
     ${sure && v ? `<p><span class="pill ${v.t}">${esc(v.txt)}</span></p>` : ''}
     ${isHidden(o) ? `<p class="hint">Odczytu nie dało się potwierdzić${o.note ? ': ' + esc(o.note) : ''}. Dlatego nie ma tu przeliczeń ani oceny. Sprawdź ofertę u źródła.</p>` : sure ? '' : `<p class="hint">Cena jest pewna, ale ${esc(o.note || 'nie da się policzyć ceny za jednostkę')}.</p>`}
-    <label class="field"><span>Kategoria (możesz poprawić)</span><select class="o-cat">${CATS.map(k => `<option value="${k.id}"${k.id === o.cat ? ' selected' : ''}>${k.e} ${k.n}</option>`).join('')}</select></label>
+    <label class="field"><span>Kategoria (możesz poprawić)</span><select class="o-cat">${CATS.map(k => `<option value="${k.id}"${k.id === o.cat ? ' selected' : ''}>${k.n}</option>`).join('')}</select></label>
     <p class="hint">Oferta pobrana automatycznie z serwera, więc nie można jej edytować.</p>`, `<button class="btn" style="width:100%" data-tolist>${onList(o) ? 'Usuń z listy zakupów' : 'Dodaj do listy zakupów'}</button>`);
   el.querySelector('[data-tolist]').onclick = async () => { el.remove(); await toggleOnList(o); };
   el.querySelector('.o-cat').onchange = async e => {
@@ -578,7 +657,7 @@ function openOffer(id) {
       <label class="field" style="width:96px"><span>Jednostka</span><select class="o-unit">${UNITS.map(u => `<option ${u === d.unit ? 'selected' : ''}>${u}</option>`).join('')}</select></label></div>
     <label class="field"><span>Ważna do</span><input type="date" class="o-until" value="${d.until}"></label>
     <label class="field"><span>Warunek (opcjonalnie)</span><input class="o-cond" value="${esc(d.cond)}" placeholder="np. z kartą, limit 3 szt."></label>
-    <div class="row" style="margin-bottom:12px"><button class="btn line sm o-cat">${catById(d.cat).e} ${catById(d.cat).n}</button></div><div id="prev"></div>`,
+    <div class="row" style="margin-bottom:12px"><button class="btn line sm o-cat">${catById(d.cat).n}</button></div><div id="prev"></div>`,
     `<div class="row" style="flex-wrap:nowrap">${ex ? '<button class="btn danger" data-oa="delete">Usuń</button>' : ''}<button class="btn" style="flex:1" data-oa="save">Zapisz okazję</button></div>`);
   const prev = el.querySelector('#prev');
   const build = () => {
@@ -607,7 +686,7 @@ function openOffer(id) {
   upd();
   el.addEventListener('input', e => {
     const t = e.target;
-    if (t.classList.contains('o-name')) { d.name = t.value; if (d.auto) { d.cat = catOf(d.name); el.querySelector('.o-cat').textContent = catById(d.cat).e + ' ' + catById(d.cat).n; } }
+    if (t.classList.contains('o-name')) { d.name = t.value; if (d.auto) { d.cat = catOf(d.name); el.querySelector('.o-cat').textContent = catById(d.cat).n; } }
     else if (t.classList.contains('o-price')) d.price = t.value;
     else if (t.classList.contains('o-need')) d.need = t.value;
     else if (t.classList.contains('o-pct')) d.pct = t.value;
@@ -618,7 +697,7 @@ function openOffer(id) {
     upd();
   });
   el.addEventListener('change', e => {
-    if (e.target.classList.contains('o-name')) { const p = products(S.receipts).find(x => x.key === norm(d.name)); if (p) { d.unit = p.unit; d.cat = p.cat; d.auto = false; el.querySelector('.o-unit').value = d.unit; el.querySelector('.o-cat').textContent = catById(d.cat).e + ' ' + catById(d.cat).n; upd(); } }
+    if (e.target.classList.contains('o-name')) { const p = products(S.receipts).find(x => x.key === norm(d.name)); if (p) { d.unit = p.unit; d.cat = p.cat; d.auto = false; el.querySelector('.o-unit').value = d.unit; el.querySelector('.o-cat').textContent = catById(d.cat).n; upd(); } }
   });
   el.addEventListener('click', async e => {
     const s = e.target.closest('[data-s]');
@@ -652,7 +731,7 @@ function openCatLimit(c) {
 
 /* ---------- kopie ---------- */
 async function doExport() {
-  const data = { app: 'zakupy', v: 1, at: new Date().toISOString(), receipts: S.receipts, offers: S.offers, kv: { limit: S.kv.limit || 0, catLimits: S.kv.catLimits || {}, lista: S.kv.lista, catFix: S.kv.catFix } };
+  const data = { app: 'zakupy', v: 1, at: new Date().toISOString(), receipts: S.receipts, offers: S.offers, kv: { limit: S.kv.limit || 0, catLimits: S.kv.catLimits || {}, lista: S.kv.lista, stale: S.kv.stale, chce: S.kv.chce, spiz: S.kv.spiz, catFix: S.kv.catFix, plan: S.kv.plan } };
   const file = new File([JSON.stringify(data)], 'zakupy-kopia-' + todayISO() + '.json', { type: 'application/json' });
   if (navigator.canShare && navigator.canShare({ files: [file] })) { try { await navigator.share({ files: [file], title: 'Kopia Zakupy' }); return; } catch (e) { if (e.name === 'AbortError') return; } }
   const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name; document.body.append(a); a.click(); a.remove();
@@ -667,8 +746,9 @@ async function doImport(file) {
   for (const o of j.offers) await put('offers', o);
   S.receipts = j.receipts; S.offers = j.offers;
   S.kv.limit = (j.kv && j.kv.limit) || 0; S.kv.catLimits = (j.kv && j.kv.catLimits) || {};
-  S.kv.lista = (j.kv && j.kv.lista) || []; S.kv.catFix = (j.kv && j.kv.catFix) || {};
-  await kvSet('limit', S.kv.limit); await kvSet('catLimits', S.kv.catLimits); await kvSet('lista', S.kv.lista); await kvSet('catFix', S.kv.catFix);
+  for (const k of LISTS) { S.kv[k] = (j.kv && j.kv[k]) || []; await kvSet(k, S.kv[k]); }
+  S.kv.catFix = (j.kv && j.kv.catFix) || {}; S.kv.plan = (j.kv && j.kv.plan) || {};
+  await kvSet('limit', S.kv.limit); await kvSet('catLimits', S.kv.catLimits); await kvSet('catFix', S.kv.catFix); await kvSet('plan', S.kv.plan);
   render(); toast('Kopia wczytana');
 }
 
@@ -680,6 +760,20 @@ view.addEventListener('input', e => {
   if (e.target.id !== 'oq') return;
   S.oq = e.target.value; const pos = e.target.selectionStart; render();
   const n = view.querySelector('#oq'); if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch (_) {} }
+});
+view.addEventListener('submit', async e => {
+  e.preventDefault();
+  const f = e.target, kind = f.dataset.form, v = f.elements.v.value.trim();
+  if (!v) { toast('Wpisz nazwę'); return; }
+  if (kind === 'plan') {
+    const am = parseMoney(f.elements.a.value); if (isNaN(am) || am <= 0) { toast('Wpisz kwotę'); return; }
+    const ym = NOW_YM(); await setPlan(ym, [...(S.kv.plan[ym] || []), { id: uid(), name: v, amount: am, done: false }]); return;
+  }
+  if (kind === 'spiz') S.kv.spiz = [...S.kv.spiz, { id: uid(), name: v, qty: 1, min: 1 }];
+  else if (S.kv[kind].some(i => norm(i.name) === norm(v))) { toast('Już jest'); return; }
+  else S.kv[kind] = [...S.kv[kind], { id: uid(), name: v }];
+  await kvSet(kind, S.kv[kind]); render();
+  const n = view.querySelector(`[data-form="${kind}"] input`); if (n) n.focus();
 });
 view.addEventListener('change', e => { if (e.target.id === 'impfile' && e.target.files[0]) doImport(e.target.files[0]); });
 view.addEventListener('click', async e => {
@@ -703,7 +797,16 @@ view.addEventListener('click', async e => {
     await saveList(); render();
   }
   else if (a === 'lclear') { S.kv.lista = S.kv.lista.filter(i => !i.done); await saveList(); render(); toast('Kupione usunięte'); }
-  else if (a === 'goto') { S.tab = b.dataset.tab; render(); }
+  else if (a === 'goto') { S.tab = b.dataset.tab; if (b.dataset.m) S.lmode = b.dataset.m; window.scrollTo(0, 0); render(); }
+  else if (a === 'lmode') { S.lmode = b.dataset.m; render(); }
+  else if (a === 'wishdel') { S.kv.chce = S.kv.chce.filter(i => i.id !== b.dataset.id); await kvSet('chce', S.kv.chce); render(); }
+  else if (a === 'wishstale') { S.kv.chce = [...S.kv.chce, ...S.kv.stale.filter(s => !S.kv.chce.some(w => norm(w.name) === norm(s.name))).map(s => ({ id: uid(), name: s.name }))]; await kvSet('chce', S.kv.chce); render(); }
+  else if (a === 'wishadd') { const n = await addOfferBest(basket(S.kv.chce.map(w => w.name), allOffers(), todayISO()).stores.flatMap(g => g.rows.map(r => r.name))); S.lmode = 'zakupy'; render(); toast(n ? `Dodano na listę: ${n}` : 'To już jest na liście'); }
+  else if (a === 'staledel') { S.kv.stale = S.kv.stale.filter(i => i.id !== b.dataset.id); await kvSet('stale', S.kv.stale); render(); }
+  else if (a === 'pqty') { S.kv.spiz = S.kv.spiz.map(i => (i.id === b.dataset.id ? { ...i, qty: Math.max(0, i.qty + Number(b.dataset.d)) } : i)); await kvSet('spiz', S.kv.spiz); render(); }
+  else if (a === 'pdel') { S.kv.spiz = S.kv.spiz.filter(i => i.id !== b.dataset.id); await kvSet('spiz', S.kv.spiz); render(); }
+  else if (a === 'plist') { const n = await addOfferBest(pantryLow(S.kv.spiz).map(i => i.name)); render(); toast(n ? `Dodano na listę: ${n}` : 'To już jest na liście'); }
+  else if (a === 'plandone' || a === 'plandel') { const ym = NOW_YM(), p = S.kv.plan[ym] || []; await setPlan(ym, a === 'plandel' ? p.filter(x => x.id !== b.dataset.id) : p.map(x => (x.id === b.dataset.id ? { ...x, done: !x.done } : x))); }
   else if (a === 'mprev') { S.ym = addMonth(S.ym, -1); render(); }
   else if (a === 'mnext') { S.ym = addMonth(S.ym, 1); render(); }
   else if (a === 'catlimit') openCatLimit(b.dataset.c);
@@ -717,10 +820,11 @@ view.addEventListener('click', async e => {
   else if (a === 'testkey') testKey();
   else if (a === 'delkey') { S.kv.geminiKey = ''; await kvSet('geminiKey', ''); render(); toast('Klucz usunięty'); }
   else if (a === 'wipe') {
-    if (!confirm('Usunąć WSZYSTKIE paragony, okazje, limity i listę zakupów z tego telefonu? Tego nie da się cofnąć. Zapisz kopię, jeśli chcesz je zachować.')) return;
+    if (!confirm('Usunąć WSZYSTKIE paragony, okazje, limity, listy i spiżarnię z tego telefonu? Tego nie da się cofnąć. Zapisz kopię, jeśli chcesz je zachować.')) return;
     await clear('receipts'); await clear('offers');
     for (const k of ['limit', 'catLimits']) { S.kv[k] = k === 'limit' ? 0 : {}; await kvSet(k, S.kv[k]); }
-    S.kv.lista = []; S.kv.catFix = {}; await kvSet('lista', []); await kvSet('catFix', {});
+    for (const k of LISTS) { S.kv[k] = []; await kvSet(k, []); }
+    S.kv.catFix = {}; S.kv.plan = {}; await kvSet('catFix', {}); await kvSet('plan', {});
     S.receipts = []; S.offers = []; render(); toast('Dane usunięte');
   }
   else if (a === 'savesrv') { S.kv.srvUrl = view.querySelector('#surl').value.trim(); await kvSet('srvUrl', S.kv.srvUrl); const ok = await fetchSrv(true); if (ok) render(); }

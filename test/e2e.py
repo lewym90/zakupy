@@ -17,11 +17,17 @@ try:
     pg = ctx.new_page()
     pg.on('console', lambda m: errs.append(m.text) if m.type == 'error' else None)
     pg.on('pageerror', lambda e: errs.append(str(e)))
+    def nav(tab):
+        # część ekranów jest na telefonie w „Więcej” albo w przełączniku, więc idziemy tak, jak użytkownik
+        vis = pg.locator(f'.tab[data-tab="{tab}"]')
+        if vis.is_visible(): vis.click()
+        elif tab == 'cennik': pg.locator('.tab[data-tab="paragony"]').click(); pg.click('.seg [data-tab="cennik"]')
+        else: pg.locator('.tab[data-tab="wiecej"]').click(); pg.click(f'#view [data-tab="{tab}"]')
     pg.goto('http://127.0.0.1:8765/'); pg.wait_for_selector('.tab')
     pg.screenshot(path=f'{OUT}/01-start-pusty.png')
 
     def add_receipt(store, date, lines, declared=None, shot=None):
-        pg.click('[data-tab="paragony"]'); pg.click('[data-act="new"]'); pg.wait_for_selector('.sheet .f-name')
+        nav('paragony'); pg.click('[data-act="new"]'); pg.wait_for_selector('.sheet .f-name')
         pg.click(f'[data-ea="store"][data-s="{store}"]'); pg.fill('.f-date', date)
         for i, (n, q, u, t, reg) in enumerate(lines):
             if i: pg.click('[data-ea="add"]')
@@ -35,7 +41,7 @@ try:
 
     st = add_receipt('Lidl', '2026-11-01', [('Karkówka wieprzowa', '1,2', 'kg', '28,80', ''), ('Mleko UHT 3,2%', '2', 'szt', '6,98', ''), ('Kawa mielona', '1', 'szt', '24,99', '')], '60,00', '02-edytor-roznica.png')
     check('droższe o 0,77' in st.replace(' ', ' '), 'różnica sumy wykryta: ' + st)
-    check(pg.locator('.ln-cat').nth(0).inner_text() == '🥩' and pg.locator('.ln-cat').nth(1).inner_text() == '🥛' and pg.locator('.ln-cat').nth(2).inner_text() == '☕', 'auto-kategorie 🥩🥛☕')
+    check([pg.locator('.ln-cat').nth(i).get_attribute('data-c') for i in range(3)] == ['mieso', 'nabial', 'kawa'], 'auto-kategorie: mięso, nabiał, kawa')
     check('Zapisz mimo różnicy' in pg.inner_text('[data-ea="save"]'), 'przycisk ostrzega o różnicy')
     pg.fill('.f-decl', '60,77'); st = pg.inner_text('.foot .stat'); check('✓' in st, 'suma zgodna po poprawce')
     pg.click('[data-ea="save"]'); pg.wait_for_selector('.sheet', state='detached')
@@ -47,21 +53,21 @@ try:
     add_receipt('Kaufland', '2026-11-02', [('Rabat kuponowy', '1', 'szt', '-3,00', ''), ('Ser żółty gouda', '0,4', 'kg', '16,00', '')])
     pg.click('[data-ea="save"]'); pg.wait_for_selector('.sheet', state='detached')
 
-    pg.click('[data-tab="start"]'); pg.wait_for_selector('.tape')
+    nav('start'); pg.wait_for_selector('.tape')
     check('Listopad' in pg.inner_text('.mnav'), 'miesiąc Listopad')
     spent = pg.inner_text('.tape .big').replace(' ', ' ')
     check(spent == '73,77 zł', 'wydane w listopadzie = 60,77 + 13,00 = 73,77 (jest: ' + spent + ')')
     pg.screenshot(path=f'{OUT}/03-start.png')
 
-    pg.click('[data-tab="paragony"]'); pg.screenshot(path=f'{OUT}/04-paragony.png')
-    pg.click('[data-tab="cennik"]'); pg.wait_for_selector('.item'); pg.screenshot(path=f'{OUT}/05-cennik.png')
+    nav('paragony'); pg.screenshot(path=f'{OUT}/04-paragony.png')
+    nav('cennik'); pg.wait_for_selector('.item'); pg.screenshot(path=f'{OUT}/05-cennik.png')
     pg.click('[data-act="product"] >> nth=0'); pg.wait_for_selector('.spark'); pg.screenshot(path=f'{OUT}/06-produkt.png')
     body = pg.inner_text('.sheet').replace(' ', ' ')
     check('Liczba zakupów\n3' in body.replace('\t', ''), 'karkówka: 3 zakupy')
     check('24,00 zł/kg' in body, 'cena za kg 24,00 widoczna (najniżej)')
     pg.click('.sheet [data-close]')
 
-    pg.click('[data-tab="okazje"]'); pg.click('[data-act="newoffer"]'); pg.wait_for_selector('.o-name')
+    nav('okazje'); pg.click('[data-act="newoffer"]'); pg.wait_for_selector('.o-name')
     pg.click('[data-s="Kaufland"]'); pg.fill('.o-name', 'Karkówka wieprzowa'); pg.fill('.o-price', '19,99'); pg.fill('.o-cond', 'z kartą, limit 3 kg')
     pv = pg.inner_text('#prev'); check('Najniższa cena z Waszych paragonów' in pv, 'okazja 19,99 vs min 24,00 = najniższa: ' + pv.replace('\n', ' '))
     pg.screenshot(path=f'{OUT}/07-okazja-edytor.png'); pg.click('[data-oa="save"]'); pg.wait_for_selector('.sheet', state='detached')
@@ -72,7 +78,7 @@ try:
 
     # porównanie: cola w Lidlu (3 × 1,5 l za 9,99) i w Kauflandzie (2 × 2 l za 13,98)
     def add_offer(store, name, price, need, amount, unit):
-        pg.click('[data-tab="okazje"]'); pg.click('[data-act="newoffer"]'); pg.wait_for_selector('.sheet .o-name')
+        nav('okazje'); pg.click('[data-act="newoffer"]'); pg.wait_for_selector('.sheet .o-name')
         pg.click(f'.sheet [data-s="{store}"]'); pg.fill('.o-name', name); pg.click('.sheet [data-mode="bundle"]')
         pg.fill('.o-need', str(need)); pg.fill('.o-price', price); pg.fill('.o-amount', amount); pg.select_option('.o-unit', unit)
         return pg.inner_text('#prev')
@@ -89,20 +95,20 @@ try:
     pg.screenshot(path=f'{OUT}/08c-porownanie.png', full_page=True)
     pg.click('[data-act="omode"][data-m="lista"]')
 
-    pg.click('[data-tab="budzet"]'); pg.fill('#limit', '3000'); pg.click('[data-act="savelimit"]')
+    nav('budzet'); pg.fill('#limit', '3000'); pg.click('[data-act="savelimit"]')
     pg.click('[data-act="catlimit"][data-c="mieso"]'); pg.fill('#cl', '60'); pg.click('[data-cl="save"]')
     pg.screenshot(path=f'{OUT}/09-budzet.png', full_page=True)
-    pg.click('[data-tab="start"]'); pg.screenshot(path=f'{OUT}/10-start-limit.png')
-    check('zostało' in pg.inner_text('.tape .of'), 'limit: zostało …')
+    nav('start'); pg.screenshot(path=f'{OUT}/10-start-limit.png')
+    check('Zostało' in pg.inner_text('.tape .of'), 'limit: zostało …')
 
-    pg.click('[data-tab="ustawienia"]')
+    nav('ustawienia')
     check(VER in pg.inner_text('#view'), 'ustawienia pokazują wersję')
     pg.fill('#gkey', 'TEST-KEY'); pg.fill('#gmodel', 'gemini-2.5-flash'); pg.click('[data-act="savegem"]'); pg.wait_for_function("document.getElementById('view').innerText.includes('Zapisany ✓')")
     check('Zapisany' in pg.inner_text('#view'), 'klucz zapisany')
     pg.click('[data-act="upd"]'); pg.wait_for_function("document.getElementById('upd-status').textContent.includes('najnowsz')", timeout=8000)
     check(pg.inner_text('#upd-latest') == VER, 'najnowsza wersja z serwera = ' + VER)
     pg.screenshot(path=f'{OUT}/09b-ustawienia.png', full_page=True)
-    pg.click('[data-tab="start"]')
+    nav('start')
 
     # oferty z serwera (atrapa pliku): pobranie, lista, porównanie, wyszukiwanie, znacznik "do sprawdzenia", tylko do odczytu
     import datetime as _dt
@@ -114,10 +120,10 @@ try:
               dict(mk('l4', 'Lidl', 'Coca-Cola Dwusztuk', 998, 1000, 'ok'), unit='ml', mode='bundle', need=2, promo='Dwusztuk', deposit=100),
               dict(mk('k2', 'Kaufland', 'CIF Spray wariantowy', 1499, 750, 'cena'), printed='750/435 ml opakowanie', note='kilka wariantów wielkości w tej samej cenie, więc cena za jednostkę zależy od wariantu')]}
     pg.route('**/oferty-test.json', lambda r: r.fulfill(status=200, content_type='application/json', headers={'access-control-allow-origin': '*'}, body=json.dumps(feed)))
-    pg.click('[data-tab="ustawienia"]'); pg.fill('#surl', 'http://localhost:8765/oferty-test.json'); pg.click('[data-act="savesrv"]')
+    nav('ustawienia'); pg.fill('#surl', 'http://localhost:8765/oferty-test.json'); pg.click('[data-act="savesrv"]')
     pg.wait_for_function("document.getElementById('view').innerText.includes('Brak klucza Gemini')", timeout=5000)
     check('Pobrane oferty' in pg.inner_text('#view') and '2' in pg.inner_text('#view'), 'serwer: pobrano 2 oferty, widać status sklepów')
-    pg.click('[data-tab="okazje"]'); pg.wait_for_selector('#oq')
+    nav('okazje'); pg.wait_for_selector('#oq')
     pg.fill('#oq', 'maslo'); pg.wait_for_timeout(150)
     t = pg.inner_text('#view'); check('Masło polskie' not in t and 'Masło ekstra' in t and 'Cola' not in t and 'Ukryto 2 oferty z niepewnym odczytem' in t, 'serwer: wyszukiwanie "maslo" (bez polskich znaków); niepewne domyślnie ukryte, widać ile')
     check(pg.eval_on_selector('#oq', 'e => e === document.activeElement'), 'serwer: pole szukania zachowuje fokus podczas pisania')
@@ -145,14 +151,14 @@ try:
     pg.click('[data-act="offer"][data-id="s:k1"]'); pg.wait_for_selector('.sheet')
     check('nie można jej edytować' in pg.inner_text('.sheet') and pg.query_selector('.sheet #o-name') is None, 'serwer: oferta tylko do odczytu')
     pg.screenshot(path=f'{OUT}/09c-oferta-serwer.png'); pg.click('[data-close]')
-    pg.reload(); pg.wait_for_selector('.tab'); pg.click('[data-tab="okazje"]'); check('Masło ekstra' in pg.inner_text('#view'), 'serwer: oferty zostają po przeładowaniu (pamięć telefonu)')
+    pg.reload(); pg.wait_for_selector('.tab'); nav('okazje'); check('Masło ekstra' in pg.inner_text('#view'), 'serwer: oferty zostają po przeładowaniu (pamięć telefonu)')
     # lista zakupów: oferty z dwóch sklepów, grupowanie po sklepie, odhaczanie, ręczna pozycja, trwałość
-    pg.click('[data-tab="okazje"]'); pg.wait_for_selector('#oq')
+    nav('okazje'); pg.wait_for_selector('#oq')
     pg.click('[data-act="addlist"][data-id="s:l4"]'); pg.wait_for_timeout(100); pg.click('[data-act="addlist"][data-id="s:k1"]'); pg.wait_for_timeout(100)
     check(pg.get_attribute('[data-act="addlist"][data-id="s:k1"]', 'class') == 'addl on', 'lista: przycisk pokazuje, że oferta jest na liście')
     pg.click('[data-act="offer"][data-id="s:l2"]'); pg.wait_for_selector('.sheet'); pg.click('[data-tolist]'); pg.wait_for_selector('.sheet', state='detached')
     pg.screenshot(path=f'{OUT}/12-okazje-plus.png')
-    pg.click('[data-tab="lista"]'); pg.wait_for_selector('.lgroup')
+    nav('lista'); pg.wait_for_selector('.lgroup')
     hs = [h.inner_text() for h in pg.locator('.lgroup h2').all()]
     check(hs == ['Kaufland', 'Lidl'], f'lista: sklepy jako nagłówki: {hs}')
     t = pg.locator('.lgroup').nth(1).inner_text(); check('Coca-Cola Dwusztuk' in t and 'Pepsi' in t and 'Masło' not in t and 'gazetka Lidl, str. 14' in t and '2 do kupienia' in t, 'lista: w Lidlu tylko produkty z Lidla')
@@ -163,15 +169,34 @@ try:
     check(pg.locator('.li.done').count() == 1 and pg.locator('.li').last.get_attribute('class') == 'li done', 'lista: kupione idzie na dół')
     pg.screenshot(path=f'{OUT}/13-lista-lidl.png', full_page=True)
     pg.locator('[data-act="lqty"][data-d="1"]').first.click(); pg.wait_for_timeout(100)
-    pg.reload(); pg.wait_for_selector('.tab'); pg.click('[data-tab="lista"]'); pg.wait_for_selector('.lgroup'); check(pg.locator('.li').count() == 4 and pg.locator('.li.done').count() == 1, 'lista: zostaje po przeładowaniu')
+    pg.reload(); pg.wait_for_selector('.tab'); nav('lista'); pg.wait_for_selector('.lgroup'); check(pg.locator('.li').count() == 4 and pg.locator('.li.done').count() == 1, 'lista: zostaje po przeładowaniu')
     pg.click('[data-act="lclear"]'); pg.wait_for_timeout(100); check(pg.locator('.li').count() == 3, 'lista: usuń kupione')
-    pg.click('[data-tab="okazje"]'); pg.wait_for_selector('.offer')
+    nav('okazje'); pg.wait_for_selector('.offer')
     pg.click('[data-act="offer"][data-id="s:k1"]'); pg.wait_for_selector('.o-cat'); pg.select_option('.o-cat', 'spizarnia'); pg.wait_for_timeout(100); pg.click('[data-close]')
-    pg.reload(); pg.wait_for_selector('.tab'); pg.click('[data-tab="okazje"]'); pg.wait_for_selector('.offer'); pg.click('[data-act="offer"][data-id="s:k1"]'); pg.wait_for_selector('.o-cat')
+    pg.reload(); pg.wait_for_selector('.tab'); nav('okazje'); pg.wait_for_selector('.offer'); pg.click('[data-act="offer"][data-id="s:k1"]'); pg.wait_for_selector('.o-cat')
     check(pg.input_value('.o-cat') == 'spizarnia', 'kategoria poprawiona ręcznie zostaje'); pg.click('[data-close]')
-    pg.set_viewport_size({'width': 360, 'height': 740}); pg.click('[data-tab="lista"]'); pg.wait_for_timeout(100); check(pg.evaluate('document.documentElement.scrollWidth - innerWidth') <= 0, '360 px: siedem zakładek bez przewijania')
+    # stałe produkty, najtańszy koszyk, spiżarnia, plan miesiąca
+    nav('lista'); pg.click('[data-act="lmode"][data-m="stale"]'); pg.fill('[data-form="stale"] input', 'masło'); pg.press('[data-form="stale"] input', 'Enter'); pg.wait_for_selector('.pz')
+    t = pg.inner_text('.list'); check('Kaufland' in t and '6,49' in t and 'Masło' not in t.split('\n')[1:0], 'stałe: pokazuje ofertę: ' + t.replace('\n', ' | '))
+    pg.fill('[data-form="stale"] input', 'szafran'); pg.press('[data-form="stale"] input', 'Enter'); pg.wait_for_timeout(100)
+    check('Teraz nie ma w ofertach' in pg.inner_text('.list'), 'stałe: brak oferty podany wprost')
+    pg.click('[data-act="lmode"][data-m="koszyk"]'); pg.click('[data-act="wishstale"]'); pg.wait_for_selector('.total')
+    pg.fill('[data-form="chce"] input', 'cola'); pg.press('[data-form="chce"] input', 'Enter'); pg.wait_for_timeout(120); t = pg.inner_text('#view')
+    check('Kaufland' in t and 'Bez oferty' in t and 'szafran' in t and 'zły odczyt' not in t and 'Razem w 2 sklepach' in t, 'koszyk: sklepy, brakujące, bez niepewnych: ' + t.replace('\n', ' | ')[:220])
+    pg.screenshot(path=f'{OUT}/15-koszyk.png', full_page=True)
+    pg.click('[data-act="wishadd"]'); pg.wait_for_selector('.li-check'); check('Zakupy' in pg.inner_text('.seg [aria-pressed="true"]'), 'koszyk: po dodaniu widać listę')
+    nav('spizarnia'); pg.fill('[data-form="spiz"] input', 'Ryż'); pg.press('[data-form="spiz"] input', 'Enter'); pg.wait_for_selector('.pz.low')
+    pg.click('[data-act="pqty"][data-d="1"]'); pg.wait_for_timeout(100); check(pg.locator('.pz.low').count() == 0, 'spiżarnia: 2 przy minimum 1 to nie brak')
+    pg.click('[data-act="pqty"][data-d="-1"]'); pg.wait_for_timeout(100); pg.screenshot(path=f'{OUT}/16-spizarnia.png'); pg.click('[data-act="plist"]'); pg.wait_for_timeout(120)
+    nav('lista'); check('Dowolny sklep' in pg.inner_text('#view') and 'Ryż' in pg.inner_text('#view'), 'spiżarnia: brak trafia na listę')
+    nav('budzet'); pg.fill('[data-form="plan"] [name=v]', 'Duże zakupy'); pg.fill('[data-form="plan"] [name=a]', '500'); pg.press('[data-form="plan"] [name=a]', 'Enter'); pg.wait_for_timeout(120); t = pg.inner_text('#view')
+    check('Zaplanowane' in t and '500,00' in t and 'Na dzień' in t, 'plan: suma i kwota na dzień'); pg.screenshot(path=f'{OUT}/17-plan.png', full_page=True)
+    pg.click('[data-tab="start"]'); pg.wait_for_selector('.tape'); t = pg.inner_text('#view')
+    check('Warto sprawdzić' in t and 'Stałe produkty w ofercie' in t and 'Kończy się: 1' in t and 'Na dzień zostaje' in t, 'Start: alerty o stałych i spiżarni, plan: ' + t.replace('\n', ' | ')[:240]); pg.screenshot(path=f'{OUT}/18-start.png', full_page=True)
+    pg.reload(); pg.wait_for_selector('.tab'); nav('spizarnia'); check(pg.locator('.pz').count() == 1, 'spiżarnia zostaje po przeładowaniu')
+    pg.set_viewport_size({'width': 360, 'height': 740}); nav('lista'); pg.wait_for_timeout(100); check(pg.evaluate('document.documentElement.scrollWidth - innerWidth') <= 0, '360 px: bez przewijania')
     labels = pg.evaluate("[...document.querySelectorAll('.tab')].every(b => b.scrollWidth <= b.clientWidth + 1)"); check(labels, '360 px: podpisy zakładek się mieszczą'); pg.screenshot(path=f'{OUT}/14-lista-360.png'); pg.set_viewport_size({'width': 390, 'height': 844})
-    pg.click('[data-tab="start"]')
+    nav('start')
 
     # offline po pierwszym załadowaniu (service worker)
     pg.wait_for_function('navigator.serviceWorker.ready.then(()=>true)'); pg.reload(); time.sleep(1)
@@ -183,12 +208,12 @@ try:
     for name, (w, h) in {'tablet': (820, 1180), 'laptop': (1366, 800)}.items():
         pg.set_viewport_size({'width': w, 'height': h})
         for tab in ['start', 'paragony', 'cennik', 'okazje', 'lista', 'budzet', 'ustawienia']:
-            pg.click(f'[data-tab="{tab}"]'); pg.wait_for_timeout(120)
+            nav(tab); pg.wait_for_timeout(120)
             if tab == 'okazje': pg.click('[data-act="omode"][data-m="porownanie"]'); pg.wait_for_timeout(80)
             pg.screenshot(path=f'{OUT}/r-{name}-{tab}.png')
             ov = pg.evaluate('document.documentElement.scrollWidth - innerWidth')
             check(ov <= 0, f'{name}/{tab}: brak poziomego przewijania ({ov})')
-        pg.click('[data-tab="paragony"]'); pg.click('[data-act="new"]'); pg.wait_for_selector('.sheet .f-name'); pg.screenshot(path=f'{OUT}/r-{name}-edytor.png'); pg.click('[data-close]')
+        nav('paragony'); pg.click('[data-act="new"]'); pg.wait_for_selector('.sheet .f-name'); pg.screenshot(path=f'{OUT}/r-{name}-edytor.png'); pg.click('[data-close]')
     pg.set_viewport_size({'width': 390, 'height': 844})
 
     # ciemny motyw

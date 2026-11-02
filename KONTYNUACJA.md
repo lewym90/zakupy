@@ -1,6 +1,6 @@
 # KONTYNUACJA: Zakupy (prywatna aplikacja PWA do cen, ofert i budżetu)
 
-> Ten plik ma pozwolić nowemu Claude (na nowym koncie) przejąć pracę bez utraty kontekstu. Jest w PUBLICZNYM repozytorium, więc nie ma w nim żadnych kluczy, tokenów ani adresów prywatnego serwera. Stan na 2026-11-02, wersja aplikacji 0.5.0.
+> Ten plik ma pozwolić nowemu Claude (na nowym koncie) przejąć pracę bez utraty kontekstu. Jest w PUBLICZNYM repozytorium, więc nie ma w nim żadnych kluczy, tokenów ani adresów prywatnego serwera. Stan na 2026-11-02, wersja aplikacji 0.6.0.
 
 ## 0. Co zrobić jako pierwsze (nowy Claude)
 1. Przeczytaj cały ten plik, potem `README.md` i `server/README.md`. Nie zaczynaj od zera i nie przepisuj działających rzeczy bez powodu.
@@ -76,6 +76,7 @@ Niezweryfikowane: odczyt zdjęcia paragonu przez Gemini na żywo i przycisk „S
 Biedronka: brak źródła; gazetki to płótno createjs z obrazami, trzeba zbadać viewer i adresy obrazów stron (przeglądarka w sesji dała dostęp do stron sklepów).
 
 ## 8. Zadania w kolejności
+Dodane w v0.6.0: nowa szata graficzna „etykieta cenowa” (czcionka Onest w `fonts/`, licencja OFL; ikony w `js/icons.js` zamiast emoji; cena przez funkcję `pr()`; jedyny mocny akcent to żółta metka `--tag`, nie dodawać kolorów). Nawigacja: na telefonie pięć zakładek (Start, Okazje, Lista, Paragony, Więcej), na większym ekranie wszystko w pasku bocznym. Funkcje w `js/plan.js`: najtańszy koszyk i stałe produkty (w Liście), spiżarnia, plan miesiąca (w Budżecie). Do koszyka i alertów trafiają tylko oferty z potwierdzoną ceną za jednostkę. Alerty są tylko w aplikacji, na ekranie Start, bez powiadomień push.
 Dodane w v0.5.0: zakładka Lista (`js/lista.js`, dane w kv `lista`): „+” przy ofercie, grupy po sklepach, filtr sklepu, odhaczanie, liczba sztuk, pozycje ręczne. Kategorie: `catOf` patrzy najpierw na słowa przed „z/do/o...”, a właściciel może poprawić kategorię w szczegółach oferty (kv `catFix`, wygrywa z automatem). Do zrobienia: mapowanie działów Kauflandu (`section`) na kategorie.
 1. ZROBIONE w v0.4.0: przebudowa odczytu ofert i widoku niepewnych ofert.
 2. Weryfikacja na serwerze: właściciel uruchamia aktualizację i odczyt; Claude analizuje log i `oferty.json` na przykładach (poproś o fragmenty).

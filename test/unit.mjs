@@ -125,5 +125,22 @@ eq(effectiveModel('gemini-2.5-flash'), DEFAULT_MODEL, 'wycofany model => domyśl
   eq(g[0].items.map(i => i.done || false), [false, false, true], 'kupione na dole');
   eq(byStore([cola, un], 'Lidl').length, 1, 'filtr sklepu');
 }
+{
+  const eq = (a, b, m) => { if (JSON.stringify(a) !== JSON.stringify(b)) { bad++; console.log('FAIL', m, JSON.stringify(a), '!=', JSON.stringify(b)); } };
+  const { matchOffers, basket, pantryLow, planSummary } = await import('../js/plan.js');
+  const T = '2026-11-03', O = (id, store, name, price, amount, unit, x = {}) => ({ id, store, name, price, amount, unit, mode: 'unit', need: 1, from: '2026-11-02', until: '2026-11-08', conf: 'ok', ...x });
+  const of = [O('a', 'Lidl', 'Masło extra', 699, 200, 'g'), O('b', 'Kaufland', 'Masło polskie', 599, 200, 'g'), O('c', 'Lidl', 'Masło orzechowe', 399, 350, 'g'),
+    O('d', 'Lidl', 'Mleko 3,2%', 349, 1, 'l', { conf: 'check' }), O('e', 'Lidl', 'Masło stare', 100, 200, 'g', { until: '2026-11-01' }), O('f', 'Lidl', 'Masło przyszłe', 100, 200, 'g', { from: '2026-11-09' }),
+    O('g', 'Kaufland', 'Coca-Cola', 1398, 2, 'l', { mode: 'bundle', need: 2 }), O('h', 'Lidl', 'Pepsi', 500, 2, 'l')];
+  eq(matchOffers('masło', of, T).map(r => r.o.id), ['b', 'a'], 'koszyk: najtaniej, bez orzechowego, starych, przyszłych');
+  eq(matchOffers('mleko', of, T), [], 'koszyk: niepewna oferta nie liczy się');
+  eq(matchOffers('coca-cola', of, T).map(r => r.o.id), ['g'], 'wpisana marka nie miesza się z inną');
+  const b = basket(['masło', 'coca-cola', 'szafran'], of, T);
+  eq([b.total, b.stores.length, b.missing, b.stores[0].store, b.found], [1997, 1, ['szafran'], 'Kaufland', 2], 'koszyk: suma, sklepy, brakujące');
+  eq(pantryLow([{ qty: 1, min: 1 }, { qty: 2, min: 1 }, { qty: 0, min: 1 }]).length, 2, 'spiżarnia: na minimum to już mało');
+  const p = planSummary({ limit: 300000, spent: 100000, plan: [{ amount: 50000 }, { amount: 90000, done: true }], listSum: 20000, day: 21, days: 30 });
+  eq([p.planned, p.free, p.left, p.perDay], [50000, 130000, 10, 13000], 'plan: zrobione się nie liczy, dzień dzisiejszy tak');
+  eq(planSummary({ limit: 1000, spent: 5000, plan: [], day: 1, days: 30 }).perDay, 0, 'plan: bez ujemnej kwoty na dzień');
+}
 console.log(bad ? bad + ' błędów' : 'unit OK');
 process.exit(bad ? 1 : 0);
