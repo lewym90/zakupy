@@ -48,5 +48,13 @@ const g = compareGroups([
 eq(g.length, 1, 'jedna grupa porównań'); eq(g[0].rows.map(r => r.o.store).join(), 'Lidl,Biedronka,Kaufland', 'kolejność: Lidl najtaniej'); eq(g[0].rows[0].rank, 1, 'miejsce 1');
 console.log('oferty OK');
 
+// ---- Gemini: wybór modelu ----
+import { pickFlash, effectiveModel, DEFAULT_MODEL } from '../js/gemini.js';
+const ML = [{ name: 'models/gemini-2.5-flash', supportedGenerationMethods: ['generateContent'] }, { name: 'models/gemini-3.8-flash', supportedGenerationMethods: ['generateContent'] },
+  { name: 'models/gemini-3.8-flash-lite', supportedGenerationMethods: ['generateContent'] }, { name: 'models/gemini-3.9-flash-image', supportedGenerationMethods: ['generateContent'] },
+  { name: 'models/gemini-4.0-flash', supportedGenerationMethods: ['embedContent'] }, { name: 'models/gemini-3.1-pro', supportedGenerationMethods: ['generateContent'] }];
+eq(pickFlash(ML), 'gemini-3.8-flash', 'pickFlash: najnowszy zwykły flash z generateContent'); eq(pickFlash([]), null, 'pickFlash: pusta lista');
+eq(effectiveModel('gemini-2.5-flash'), DEFAULT_MODEL, 'wycofany model => domyślny'); eq(effectiveModel(''), DEFAULT_MODEL, 'brak modelu => domyślny'); eq(effectiveModel('gemini-3.9-flash'), 'gemini-3.9-flash', 'własny model zostaje');
+
 console.log(bad ? bad + ' błędów' : 'unit OK');
 process.exit(bad ? 1 : 0);

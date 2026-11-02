@@ -3,7 +3,45 @@
 // Klucz jest tylko w tym telefonie (IndexedDB), nigdy w repozytorium.
 import { STORES } from './cats.js';
 
-export const DEFAULT_MODEL = 'gemini-2.5-flash';
+export const DEFAULT_MODEL = 'gemini-3.8-flash';
+// Modele wycofane przez Google (zapisane wcześniej w telefonie traktujemy jak "domyślny").
+const RETIRED = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.0-flash-001', 'gemini-1.5-flash-latest'];
+export const effectiveModel = m => (!m || RETIRED.includes(m) ? DEFAULT_MODEL : m);
+
+// Z listy modeli Google wybiera najnowszy zwykły model "flash" umiejący generateContent.
+export function pickFlash(models) {
+  const cand = [];
+  for (const m of models || []) {
+    const name = String(m.name || '').replace(/^models\//, '');
+    const mm = /^gemini-(\d+(?:\.\d+)?)-flash$/.exec(name);
+    if (!mm) continue;
+    if (m.supportedGenerationMethods && !m.supportedGenerationMethods.includes('generateContent')) continue;
+    cand.push({ name, v: parseFloat(mm[1]) });
+  }
+  cand.sort((a, b) => b.v - a.v);
+  return cand.length ? cand[0].name : null;
+}
+
+export async function listModels(key) {
+  const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', { headers: { 'x-goog-api-key': key } });
+  if (!r.ok) throw await apiError(r);
+  const j = await r.json();
+  return j.models || [];
+}
+
+// Po polsku, krótko, z informacją co zrobić.
+async function apiError(r) {
+  let raw = '';
+  try { const j = await r.json(); raw = (j.error && j.error.message) || ''; } catch (_) {}
+  const e = new Error(
+    r.status === 404 ? 'Google wycofał ten model. Spróbuję znaleźć działający.' :
+    r.status === 400 && /API key/i.test(raw) ? 'Google odrzuca klucz. Sprawdź, czy skopiowałeś go w całości (Ustawienia).' :
+    r.status === 403 ? 'Klucz nie ma dostępu do tej usługi. Sprawdź go w Ustawieniach.' :
+    r.status === 429 ? 'Przekroczony darmowy limit Gemini. Poczekaj chwilę i spróbuj ponownie.' :
+    'Błąd Google ' + r.status + (raw ? ': ' + raw.slice(0, 120) : ''));
+  e.status = r.status; e.raw = raw;
+  return e;
+}
 
 const PROMPT = `Odczytaj paragon ze zdjęcia. Zwróć wyłącznie JSON w formacie:
 {"sklep": string|null, "data": "RRRR-MM-DD"|null, "suma": number|null, "pozycje": [{"nazwa": string, "ilosc": number, "jednostka": "szt"|"kg"|"l", "wartosc": number}]}
@@ -26,9 +64,8 @@ export function shrinkImage(file, max = 1600) {
   });
 }
 
-export async function readReceipt(file, key, model) {
-  const b64 = await shrinkImage(file);
-  const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model || DEFAULT_MODEL) + ':generateContent';
+async function callModel(b64, key, model) {
+  const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent';
   const r = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
@@ -37,17 +74,26 @@ export async function readReceipt(file, key, model) {
       generationConfig: { responseMimeType: 'application/json', temperature: 0 },
     }),
   });
-  if (!r.ok) {
-    let msg = 'Błąd ' + r.status;
-    try { const j = await r.json(); if (j.error && j.error.message) msg += ': ' + j.error.message; } catch (_) {}
-    throw new Error(msg);
+  if (!r.ok) throw await apiError(r);
+  return r.json();
+}
+
+// Zwraca odczyt + `usedModel`. Gdy model nie istnieje (404), pobiera listę modeli i próbuje najnowszego "flash".
+export async function readReceipt(file, key, model) {
+  const b64 = await shrinkImage(file);
+  let used = effectiveModel(model), j;
+  try { j = await callModel(b64, key, used); }
+  catch (e) {
+    if (e.status !== 404) throw e;
+    const next = pickFlash(await listModels(key));
+    if (!next || next === used) throw new Error('Nie znalazłem działającego modelu Gemini dla tego klucza. Sprawdź klucz w Ustawieniach.');
+    used = next; j = await callModel(b64, key, used);
   }
-  const j = await r.json();
   const txt = j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts.map(p => p.text || '').join('');
   if (!txt) throw new Error('Pusta odpowiedź modelu.');
   let o;
   try { o = JSON.parse(txt); } catch (_) { throw new Error('Odpowiedź nie jest poprawnym JSON-em.'); }
-  return cleanRead(o);
+  return { ...cleanRead(o), usedModel: used };
 }
 
 // Czyszczenie odpowiedzi: tylko poprawne typy, nic nie "dopowiadamy".

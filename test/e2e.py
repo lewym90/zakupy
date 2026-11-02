@@ -1,6 +1,8 @@
+import re
 # Test w przeglądarce (rozmiar telefonu). Użycie: python3 test/e2e.py <katalog_zrzutów>
 import sys, subprocess, time, os, json
 from playwright.sync_api import sync_playwright
+VER = re.search(r"VERSION = '([^']+)'", open('js/app.js').read()).group(1)
 OUT = sys.argv[1] if len(sys.argv) > 1 else '/tmp/shots'; os.makedirs(OUT, exist_ok=True)
 srv = subprocess.Popen(['python3', '-m', 'http.server', '8765', '--bind', '127.0.0.1'], cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 time.sleep(1)
@@ -94,11 +96,11 @@ try:
     check('zostało' in pg.inner_text('.tape .of'), 'limit: zostało …')
 
     pg.click('[data-tab="ustawienia"]')
-    check('0.2.0' in pg.inner_text('#view'), 'ustawienia pokazują wersję')
+    check(VER in pg.inner_text('#view'), 'ustawienia pokazują wersję')
     pg.fill('#gkey', 'TEST-KEY'); pg.fill('#gmodel', 'gemini-2.5-flash'); pg.click('[data-act="savegem"]'); pg.wait_for_function("document.getElementById('view').innerText.includes('Zapisany ✓')")
     check('Zapisany' in pg.inner_text('#view'), 'klucz zapisany')
     pg.click('[data-act="upd"]'); pg.wait_for_function("document.getElementById('upd-status').textContent.includes('najnowsz')", timeout=8000)
-    check(pg.inner_text('#upd-latest') == '0.2.0', 'najnowsza wersja z serwera = 0.1.2')
+    check(pg.inner_text('#upd-latest') == VER, 'najnowsza wersja z serwera = ' + VER)
     pg.screenshot(path=f'{OUT}/09b-ustawienia.png', full_page=True)
     pg.click('[data-tab="start"]')
 

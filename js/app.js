@@ -2,10 +2,10 @@ import { all, put, del, clear, kvGet, kvSet } from './db.js';
 import { CATS, catOf, catById, STORES } from './cats.js';
 import { esc, zl, zlShort, parseMoney, parseNum, centsToInput, norm, uid, todayISO, ymOf, monthName, monthShort, addMonth, daysInMonth, fmtDate } from './util.js';
 import { products, matchProduct, verdict, monthStats, monthTotals, receiptTotal, lineSum } from './calc.js';
-import { readReceipt, DEFAULT_MODEL } from './gemini.js';
+import { readReceipt, DEFAULT_MODEL, effectiveModel, listModels, pickFlash } from './gemini.js';
 import { offerCalc, compareGroups, familyOf, offerLabel, UNITS } from './offers.js';
 
-const VERSION = '0.2.0';
+const VERSION = '0.2.1';
 const NOW_YM = () => todayISO().slice(0, 7);
 const S = { receipts: [], offers: [], kv: {}, tab: 'start', omode: 'lista', ym: NOW_YM(), q: '', cat: '', ocat: '', lastStore: 'Biedronka' };
 const view = document.getElementById('view');
@@ -23,7 +23,7 @@ const TABS = [['start', 'Start'], ['paragony', 'Paragony'], ['cennik', 'Cennik']
 function toast(msg) {
   const t = document.getElementById('toast');
   t.textContent = msg; t.classList.add('on');
-  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('on'), 2600);
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('on'), Math.min(9000, 2600 + String(msg).length * 45));
 }
 
 /* ---------- start ---------- */
@@ -203,7 +203,7 @@ function ustawienia() {
       <div class="kv"><span>Klucz</span><b class="${key ? 'down' : 'up'}">${key ? 'Zapisany ✓' : 'Brak'}</b></div>
       <p class="hint" style="margin:8px 0 10px">Darmowy klucz zrobisz na aistudio.google.com (Get API key). Zostaje tylko w tym telefonie i nie trafia do kopii zapasowej. Wynik odczytu zawsze trzeba sprawdzić, a aplikacja porównuje sumę pozycji z sumą na paragonie.</p>
       <label class="field"><span>Klucz API</span><div class="row" style="flex-wrap:nowrap"><input id="gkey" type="password" autocomplete="off" value="${esc(key)}" placeholder="wklej klucz"><button class="btn ghost sm" data-act="showkey" aria-label="Pokaż lub ukryj klucz">Pokaż</button></div></label>
-      <label class="field"><span>Model</span><input id="gmodel" value="${esc(S.kv.geminiModel || DEFAULT_MODEL)}"></label>
+      <label class="field"><span>Model</span><input id="gmodel" value="${esc(effectiveModel(S.kv.geminiModel))}"></label>
       <p class="hint" id="key-status" style="margin:0 0 10px"></p>
       <div class="row"><button class="btn sm" data-act="savegem">Zapisz</button><button class="btn ghost sm" data-act="testkey">Sprawdź klucz</button>${key ? '<button class="btn ghost sm" data-act="delkey">Usuń klucz</button>' : ''}</div></div>
     <h2>Dane i kopie</h2><div class="card">
@@ -264,9 +264,17 @@ async function testKey() {
   if (!k) { st.textContent = 'Najpierw wklej klucz.'; return; }
   st.textContent = 'Sprawdzam…';
   try {
-    const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=1', { headers: { 'x-goog-api-key': k } });
-    st.textContent = r.ok ? 'Klucz działa ✓' : (r.status === 400 || r.status === 403) ? 'Google odrzuca ten klucz. Sprawdź, czy skopiowałeś go w całości.' : 'Google odpowiedziało błędem ' + r.status + '.';
-  } catch (_) { st.textContent = 'Nie mogę połączyć się z Google. Brak internetu?'; }
+    const models = await listModels(k);
+    const have = new Set(models.map(m => String(m.name).replace(/^models\//, '')));
+    const cur = effectiveModel(view.querySelector('#gmodel').value.trim() || S.kv.geminiModel);
+    let msg = 'Klucz działa ✓';
+    if (!have.has(cur)) {
+      const next = pickFlash(models);
+      if (next) { S.kv.geminiKey = k; S.kv.geminiModel = next; await kvSet('geminiKey', k); await kvSet('geminiModel', next); view.querySelector('#gmodel').value = next; msg += '. Model „' + cur + '” nie jest dostępny, ustawiłam „' + next + '”.'; }
+      else msg += ', ale nie widzę żadnego modelu Gemini do odczytu zdjęć.';
+    } else msg += '. Model „' + cur + '” jest dostępny.';
+    st.textContent = msg;
+  } catch (e) { st.textContent = e.status ? e.message : 'Nie mogę połączyć się z Google. Brak internetu?'; }
 }
 
 /* ---------- arkusze ---------- */
@@ -385,6 +393,7 @@ function openReceipt(id) {
     toast('Odczytuję paragon…');
     try {
       const r = await readReceipt(file, S.kv.geminiKey, S.kv.geminiModel);
+      if (r.usedModel && r.usedModel !== S.kv.geminiModel) { S.kv.geminiModel = r.usedModel; await kvSet('geminiModel', r.usedModel); }
       if (r.store) d.store = r.store;
       if (r.date) d.date = r.date;
       if (r.declared) d.declared = centsToInput(r.declared);
@@ -567,7 +576,7 @@ view.addEventListener('click', async e => {
     for (const k of ['limit', 'catLimits']) { S.kv[k] = k === 'limit' ? 0 : {}; await kvSet(k, S.kv[k]); }
     S.receipts = []; S.offers = []; render(); toast('Dane usunięte');
   }
-  else if (a === 'savegem') { S.kv.geminiKey = view.querySelector('#gkey').value.trim(); S.kv.geminiModel = view.querySelector('#gmodel').value.trim() || DEFAULT_MODEL; await kvSet('geminiKey', S.kv.geminiKey); await kvSet('geminiModel', S.kv.geminiModel); render(); toast('Ustawienia zapisane'); }
+  else if (a === 'savegem') { S.kv.geminiKey = view.querySelector('#gkey').value.trim(); S.kv.geminiModel = effectiveModel(view.querySelector('#gmodel').value.trim()); await kvSet('geminiKey', S.kv.geminiKey); await kvSet('geminiModel', S.kv.geminiModel); render(); toast('Ustawienia zapisane'); }
 });
 
 init();
