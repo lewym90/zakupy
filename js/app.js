@@ -3,11 +3,12 @@ import { CATS, catOf, catById, STORES } from './cats.js';
 import { esc, zl, zlShort, parseMoney, parseNum, centsToInput, norm, uid, todayISO, ymOf, monthName, monthShort, addMonth, daysInMonth, fmtDate } from './util.js';
 import { products, matchProduct, verdict, monthStats, monthTotals, receiptTotal, lineSum } from './calc.js';
 import { readReceipt, DEFAULT_MODEL, effectiveModel, listModels, pickFlash } from './gemini.js';
+import { itemFromOffer, manualItem, byStore } from './lista.js';
 import { offerCalc, compareGroups, familyOf, offerLabel, UNITS, packLabel, unitPrice, promoLabel, whereLabel, isMulti, isSure, isHidden, flyerUrl } from './offers.js';
 
-const VERSION = '0.4.1';
+const VERSION = '0.5.0';
 const NOW_YM = () => todayISO().slice(0, 7);
-const S = { receipts: [], offers: [], kv: {}, tab: 'start', omode: 'lista', ym: NOW_YM(), q: '', cat: '', ocat: '', lastStore: 'Biedronka', srv: null, oq: '', ounsure: false };
+const S = { receipts: [], offers: [], kv: {}, tab: 'start', omode: 'lista', ym: NOW_YM(), q: '', cat: '', ocat: '', lastStore: 'Biedronka', srv: null, oq: '', ounsure: false, lstore: '' };
 const view = document.getElementById('view');
 
 const ICON = {
@@ -15,10 +16,11 @@ const ICON = {
   paragony: '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9.5 8h5M9.5 12h5"/>',
   cennik: '<path d="M3 12 12 3h8v8l-9 9z"/><circle cx="15.5" cy="8.5" r="1.3"/>',
   okazje: '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
+  lista: '<path d="M9 6h11M9 12h11M9 18h11"/><path d="m3.5 6 1 1 2-2M3.5 12l1 1 2-2M3.5 18l1 1 2-2"/>',
   ustawienia: '<circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M18.7 5.3l-2.1 2.1M7.4 16.6l-2.1 2.1"/>',
   budzet: '<path d="M3 7.5h17a1 1 0 0 1 1 1V19a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M3 7.5 5.5 4h11"/><circle cx="16.5" cy="13.5" r="1.2"/>',
 };
-const TABS = [['start', 'Start'], ['paragony', 'Paragony'], ['cennik', 'Cennik'], ['okazje', 'Okazje'], ['budzet', 'Budżet'], ['ustawienia', 'Ustawienia']];
+const TABS = [['start', 'Start'], ['paragony', 'Paragony'], ['cennik', 'Cennik'], ['okazje', 'Okazje'], ['lista', 'Lista'], ['budzet', 'Budżet'], ['ustawienia', 'Ustawienia']];
 
 function toast(msg) {
   const t = document.getElementById('toast');
@@ -30,7 +32,8 @@ function toast(msg) {
 async function init() {
   const [receipts, offers] = await Promise.all([all('receipts'), all('offers')]);
   S.receipts = receipts; S.offers = offers;
-  for (const k of ['limit', 'catLimits', 'geminiKey', 'geminiModel', 'srvUrl']) S.kv[k] = await kvGet(k);
+  for (const k of ['limit', 'catLimits', 'geminiKey', 'geminiModel', 'srvUrl', 'lista', 'catFix']) S.kv[k] = await kvGet(k);
+  S.kv.lista = S.kv.lista || []; S.kv.catFix = S.kv.catFix || {};
   S.srv = (await kvGet('srvOffers')) || null;
   document.getElementById('tabbar').innerHTML = TABS.map(([id, n]) =>
     `<button class="tab" data-tab="${id}"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON[id]}</svg>${n}</button>`).join('');
@@ -55,7 +58,7 @@ function render() {
 }
 
 /* ---------- ekrany ---------- */
-const SCREENS = { start, paragony, cennik, okazje, budzet, ustawienia };
+const SCREENS = { start, paragony, cennik, okazje, lista, budzet, ustawienia };
 
 function receiptEmoji(r) {
   const sums = {};
@@ -135,10 +138,11 @@ const offerUP = o => offerCalc(o).up;
 const prods = () => S._p || (S._p = products(S.receipts));
 function offerVerdict(o) { const c = offerCalc(o); return verdict(c.up, c.base, matchProduct(prods(), o.name)); }
 // Oferty własne + oferty z serwera (tylko do odczytu, id z prefiksem "s:")
-let _ao = { m: null, s: null, v: [] };
+let _ao = { m: null, s: null, f: null, v: [] };
+const offerCat = name => S.kv.catFix[norm(name)] || catOf(name); // ręczna poprawka właściciela ma pierwszeństwo
 function allOffers() {
   const sv = S.srv && S.srv.data && Array.isArray(S.srv.data.offers) ? S.srv.data.offers : null;
-  if (_ao.m !== S.offers || _ao.s !== sv) _ao = { m: S.offers, s: sv, v: [...S.offers, ...(sv || []).map(o => ({ ...o, id: 's:' + o.id, cat: catOf(o.name), srv: true }))] };
+  if (_ao.m !== S.offers || _ao.s !== sv || _ao.f !== S.kv.catFix) _ao = { m: S.offers, s: sv, f: S.kv.catFix, v: [...S.offers, ...(sv || []).map(o => ({ ...o, id: 's:' + o.id, cat: offerCat(o.name), srv: true }))] };
   return _ao.v;
 }
 const normQ = t => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ł/g, 'l');
@@ -161,7 +165,18 @@ const UNIT_LBL = { l: 'l', kg: 'kg', szt: 'szt' };
 const promoPill = o => { const t = promoLabel(o, zl); return t ? `<span class="pill promo">🏷️ ${esc(t)}</span>` : ''; };
 const depositLine = o => (o.deposit ? `<span class="hint">+ kaucja ${zl(o.deposit)} (poza ceną)</span>` : '');
 const whereLine = o => { const w = whereLabel(o); return w ? `<span class="hint">Szukaj: ${esc(w)}</span>` : ''; };
+const onList = o => S.kv.lista.some(i => i.offerId === o.id);
+const addBtn = o => { const on = onList(o); return `<button class="addl${on ? ' on' : ''}" data-act="addlist" data-id="${o.id}" aria-label="${on ? 'Usuń z listy zakupów' : 'Dodaj do listy zakupów'}">${on ? '✓' : '+'}</button>`; };
+async function saveList() { await kvSet('lista', S.kv.lista); }
+async function toggleOnList(o) {
+  const on = onList(o);
+  S.kv.lista = on ? S.kv.lista.filter(i => i.offerId !== o.id) : [...S.kv.lista, itemFromOffer(o, zl)];
+  await saveList(); render(); toast(on ? 'Usunięto z listy' : `Na liście: ${o.store}`);
+}
 function offerCard(o, v) {
+  return `<div class="ofw">${offerBody(o, v)}${addBtn(o)}</div>`;
+}
+function offerBody(o, v) {
   const c = offerCalc(o), multi = isMulti(o), hid = isHidden(o);
   if (!isSure(o)) return `<button class="offer${hid ? ' unsure' : ''}" data-act="offer" data-id="${o.id}"><span class="em">${catById(o.cat).e}</span>
     <span class="mid"><span class="t">${esc(o.name)}</span><span class="hint">${esc(o.store)} · do ${fmtDate(o.until)}${o.cond ? ' · ' + esc(o.cond) : ''}</span>
@@ -189,12 +204,12 @@ function okazje() {
     body = groups.length ? '<div class="cmpgrid">' + groups.map(g => {
       const b = g.best;
       const rows = g.rows.map(r => { const u = unitPrice(r.o, g.per), multi = isMulti(r.o);
-        return `<button class="cmp-row ${r.rank === 1 ? 'best' : ''}" data-act="offer" data-id="${r.o.id}">
+        return `<div class="cmpw ${r.rank === 1 ? 'best' : ''}"><button class="cmp-row ${r.rank === 1 ? 'best' : ''}" data-act="offer" data-id="${r.o.id}">
         <span class="rk">${r.rank}</span>
         <span class="mid"><span class="t">${esc(r.o.store)}</span><span class="hint">${esc(r.o.name)}</span>${promoPill(r.o)}
           <span class="hint">${multi ? 'Komplet' : 'Opakowanie'}: <b>${esc(packLabel(r.o))}</b></span>
           <span class="uprice">Za ${esc(u.label)}: <b>${zl(u.price)}</b>${r.rank > 1 ? ` <em>+${Math.round(r.over * 100)}%</em>` : ' <em class="bestt">najtaniej</em>'}</span>${depositLine(r.o)}${whereLine(r.o)}</span>
-        <span class="p num"><b>${zl(r.c.total)}</b><small>${multi ? 'za komplet' : 'za opakowanie'}</small></span></button>`; }).join('');
+        <span class="p num"><b>${zl(r.c.total)}</b><small>${multi ? 'za komplet' : 'za opakowanie'}</small></span></button>${addBtn(r.o)}</div>`; }).join('');
       return `<div class="card cmp"><div class="cmp-h"><b>${esc(g.fam.n)}</b><span class="hint">najtaniej: ${esc(b.o.store)}, ${zl(unitPrice(b.o, g.per).price)} za ${esc(unitPrice(b.o, g.per).label)}</span></div>${rows}</div>`;
     }).join('') + '</div><p class="hint" style="text-align:center">Porównuję ten sam rodzaj produktu po cenie za litr, kilogram lub sztukę. Marki mogą się różnić, więc sprawdź, czy to naprawdę to, czego szukasz.' + (nUnsure ? ' Oferty z niepewnym odczytem nie biorą udziału w porównaniu.' : '') + '</p>'
       : `<div class="empty"><div class="big">⚖️</div><b>Na razie nie ma czego porównać</b><p>Porównanie pojawi się, gdy dodasz dwie aktywne okazje na podobny produkt (np. cola w Lidlu i w Kauflandzie).</p><button class="btn" data-act="newoffer">Dodaj okazję</button></div>`;
@@ -210,6 +225,36 @@ function okazje() {
   return `<div class="head"><div><h1>Okazje</h1><p class="sub">${S.omode === 'porownanie' ? 'Która oferta wychodzi taniej' : 'Oceniane względem Waszych cen'}</p></div><button class="btn sm" data-act="newoffer">Dodaj</button></div>
     ${seg}${body}
     ${old ? `<p style="text-align:center"><button class="lnk" data-act="purge">Usuń zakończone okazje (${old})</button></p>` : ''}`;
+}
+
+function lista() {
+  const items = S.kv.lista, stores = [...new Set(items.map(i => i.store))].sort((a, b) => a.localeCompare(b, 'pl'));
+  if (S.lstore && !stores.includes(S.lstore)) S.lstore = '';
+  const groups = byStore(items, S.lstore), today = todayISO();
+  const left = items.filter(i => !i.done).length, done = items.filter(i => i.done).length;
+  const head = `<div class="head"><div><h1>Lista</h1><p class="sub">${items.length ? `Do kupienia: ${left}` : 'Zakupy sklep po sklepie'}</p></div><button class="btn sm" data-act="newitem">Dodaj</button></div>`;
+  if (!items.length) return head + `<div class="empty"><div class="big">🛒</div><b>Lista jest pusta</b><p>W Okazjach naciśnij „+” przy ofercie albo dodaj produkt ręcznie.</p><button class="btn" data-act="goto" data-tab="okazje">Przejdź do okazji</button></div>`;
+  const chips = stores.length > 1 ? `<div class="chips"><button class="chip" aria-pressed="${!S.lstore}" data-act="lstore" data-s="">Wszystkie sklepy</button>${stores.map(s => `<button class="chip" aria-pressed="${S.lstore === s}" data-act="lstore" data-s="${esc(s)}">${esc(s)} (${items.filter(i => i.store === s && !i.done).length})</button>`).join('')}</div>` : '';
+  const row = i => {
+    const warn = i.until && i.until < today ? `<span class="up">Oferta skończyła się ${fmtDate(i.until)}</span>` : i.from && i.from > today ? `<span class="up">Oferta dopiero od ${fmtDate(i.from)}</span>` : '';
+    return `<div class="li${i.done ? ' done' : ''}"><button class="li-main" data-act="ltoggle" data-id="${esc(i.id)}" aria-pressed="${!!i.done}"><span class="li-check">${i.done ? '✓' : ''}</span>
+      <span class="mid"><span class="t">${esc(i.name)}</span>${i.promo ? `<span class="pill promo">🏷️ ${esc(i.promo)}</span>` : ''}${i.pack ? `<span class="hint">${esc(i.pack)}</span>` : ''}${i.cond ? `<span class="hint"><b>Warunek:</b> ${esc(i.cond)}</span>` : ''}${i.where ? `<span class="hint">Szukaj: ${esc(i.where)}</span>` : ''}${i.deposit ? `<span class="hint">+ kaucja ${zl(i.deposit)}</span>` : ''}${i.unsure ? '<span class="hint">Odczyt niepewny, sprawdź cenę w sklepie</span>' : ''}${warn}</span>
+      ${i.price ? `<span class="p num"><b>${zl(i.price * (i.qty || 1))}</b></span>` : ''}</button>
+      <div class="li-q"><button data-act="lqty" data-id="${esc(i.id)}" data-d="-1" aria-label="${(i.qty || 1) > 1 ? 'Mniej' : 'Usuń z listy'}">${(i.qty || 1) > 1 ? '−' : '×'}</button><b>${i.qty || 1}</b><button data-act="lqty" data-id="${esc(i.id)}" data-d="1" aria-label="Więcej">+</button></div></div>`;
+  };
+  return head + chips + groups.map(g => `<section class="card lgroup"><div class="lg-h"><h2>${esc(g.store)}</h2><span class="hint">${g.left ? `${g.left} do kupienia` : 'wszystko kupione'}${g.sum ? ` · ${zl(g.sum)}` : ''}${g.noPrice ? ' + bez ceny' : ''}</span></div>${g.items.map(row).join('')}</section>`).join('')
+    + (done ? `<p style="text-align:center"><button class="lnk" data-act="lclear">Usuń kupione (${done})</button></p>` : '');
+}
+function openNewItem() {
+  let store = S.lstore || S.lastStore;
+  const el = sheet('Dodaj do listy', `<label class="field"><span>Produkt</span><input class="i-name" list="prod" placeholder="np. mleko" autocomplete="off"></label>
+    <div class="field"><span>Sklep</span><div class="chips">${STORES.map(s => `<button class="chip" aria-pressed="${s === store}" data-s="${s}">${s}</button>`).join('')}</div></div>`, '<button class="btn" style="width:100%" data-save>Dodaj</button>');
+  el.querySelectorAll('[data-s]').forEach(b => { b.onclick = () => { store = b.dataset.s; el.querySelectorAll('[data-s]').forEach(x => x.setAttribute('aria-pressed', x === b)); }; });
+  el.querySelector('[data-save]').onclick = async () => {
+    const name = el.querySelector('.i-name').value.trim(); if (!name) { toast('Wpisz nazwę produktu'); return; }
+    S.kv.lista = [...S.kv.lista, manualItem(uid(), name, store)]; S.lastStore = store; await saveList(); el.remove(); render(); toast(`Na liście: ${store}`);
+  };
+  el.querySelector('.i-name').focus();
 }
 
 function budzet() {
@@ -505,7 +550,13 @@ function openSrvOffer(o) {
     ${flyerUrl(o) ? `<p><a class="lnk" href="${esc(flyerUrl(o))}" target="_blank" rel="noopener">Otwórz tę stronę gazetki</a></p>` : ''}
     ${sure && v ? `<p><span class="pill ${v.t}">${esc(v.txt)}</span></p>` : ''}
     ${isHidden(o) ? `<p class="hint">Odczytu nie dało się potwierdzić${o.note ? ': ' + esc(o.note) : ''}. Dlatego nie ma tu przeliczeń ani oceny. Sprawdź ofertę u źródła.</p>` : sure ? '' : `<p class="hint">Cena jest pewna, ale ${esc(o.note || 'nie da się policzyć ceny za jednostkę')}.</p>`}
-    <p class="hint">Oferta pobrana automatycznie z serwera, więc nie można jej edytować.</p>`);
+    <label class="field"><span>Kategoria (możesz poprawić)</span><select class="o-cat">${CATS.map(k => `<option value="${k.id}"${k.id === o.cat ? ' selected' : ''}>${k.e} ${k.n}</option>`).join('')}</select></label>
+    <p class="hint">Oferta pobrana automatycznie z serwera, więc nie można jej edytować.</p>`, `<button class="btn" style="width:100%" data-tolist>${onList(o) ? 'Usuń z listy zakupów' : 'Dodaj do listy zakupów'}</button>`);
+  el.querySelector('[data-tolist]').onclick = async () => { el.remove(); await toggleOnList(o); };
+  el.querySelector('.o-cat').onchange = async e => {
+    S.kv.catFix = { ...S.kv.catFix, [norm(o.name)]: e.target.value }; await kvSet('catFix', S.kv.catFix);
+    o.cat = e.target.value; toast('Zapamiętano kategorię'); render();
+  };
   return el;
 }
 
@@ -601,7 +652,7 @@ function openCatLimit(c) {
 
 /* ---------- kopie ---------- */
 async function doExport() {
-  const data = { app: 'zakupy', v: 1, at: new Date().toISOString(), receipts: S.receipts, offers: S.offers, kv: { limit: S.kv.limit || 0, catLimits: S.kv.catLimits || {} } };
+  const data = { app: 'zakupy', v: 1, at: new Date().toISOString(), receipts: S.receipts, offers: S.offers, kv: { limit: S.kv.limit || 0, catLimits: S.kv.catLimits || {}, lista: S.kv.lista, catFix: S.kv.catFix } };
   const file = new File([JSON.stringify(data)], 'zakupy-kopia-' + todayISO() + '.json', { type: 'application/json' });
   if (navigator.canShare && navigator.canShare({ files: [file] })) { try { await navigator.share({ files: [file], title: 'Kopia Zakupy' }); return; } catch (e) { if (e.name === 'AbortError') return; } }
   const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name; document.body.append(a); a.click(); a.remove();
@@ -616,7 +667,8 @@ async function doImport(file) {
   for (const o of j.offers) await put('offers', o);
   S.receipts = j.receipts; S.offers = j.offers;
   S.kv.limit = (j.kv && j.kv.limit) || 0; S.kv.catLimits = (j.kv && j.kv.catLimits) || {};
-  await kvSet('limit', S.kv.limit); await kvSet('catLimits', S.kv.catLimits);
+  S.kv.lista = (j.kv && j.kv.lista) || []; S.kv.catFix = (j.kv && j.kv.catFix) || {};
+  await kvSet('limit', S.kv.limit); await kvSet('catLimits', S.kv.catLimits); await kvSet('lista', S.kv.lista); await kvSet('catFix', S.kv.catFix);
   render(); toast('Kopia wczytana');
 }
 
@@ -642,6 +694,15 @@ view.addEventListener('click', async e => {
   else if (a === 'ocat') { S.ocat = b.dataset.c; render(); }
   else if (a === 'omode') { S.omode = b.dataset.m; render(); }
   else if (a === 'ounsure') { S.ounsure = !S.ounsure; render(); }
+  else if (a === 'addlist') { const o = allOffers().find(x => x.id === b.dataset.id); if (o) await toggleOnList(o); }
+  else if (a === 'newitem') openNewItem();
+  else if (a === 'lstore') { S.lstore = b.dataset.s; render(); }
+  else if (a === 'ltoggle') { S.kv.lista = S.kv.lista.map(i => (i.id === b.dataset.id ? { ...i, done: !i.done } : i)); await saveList(); render(); }
+  else if (a === 'lqty') {
+    S.kv.lista = S.kv.lista.flatMap(i => { if (i.id !== b.dataset.id) return [i]; const q = (i.qty || 1) + Number(b.dataset.d); return q < 1 ? [] : [{ ...i, qty: q }]; });
+    await saveList(); render();
+  }
+  else if (a === 'lclear') { S.kv.lista = S.kv.lista.filter(i => !i.done); await saveList(); render(); toast('Kupione usunięte'); }
   else if (a === 'goto') { S.tab = b.dataset.tab; render(); }
   else if (a === 'mprev') { S.ym = addMonth(S.ym, -1); render(); }
   else if (a === 'mnext') { S.ym = addMonth(S.ym, 1); render(); }
@@ -656,9 +717,10 @@ view.addEventListener('click', async e => {
   else if (a === 'testkey') testKey();
   else if (a === 'delkey') { S.kv.geminiKey = ''; await kvSet('geminiKey', ''); render(); toast('Klucz usunięty'); }
   else if (a === 'wipe') {
-    if (!confirm('Usunąć WSZYSTKIE paragony, okazje i limity z tego telefonu? Tego nie da się cofnąć. Zapisz kopię, jeśli chcesz je zachować.')) return;
+    if (!confirm('Usunąć WSZYSTKIE paragony, okazje, limity i listę zakupów z tego telefonu? Tego nie da się cofnąć. Zapisz kopię, jeśli chcesz je zachować.')) return;
     await clear('receipts'); await clear('offers');
     for (const k of ['limit', 'catLimits']) { S.kv[k] = k === 'limit' ? 0 : {}; await kvSet(k, S.kv[k]); }
+    S.kv.lista = []; S.kv.catFix = {}; await kvSet('lista', []); await kvSet('catFix', {});
     S.receipts = []; S.offers = []; render(); toast('Dane usunięte');
   }
   else if (a === 'savesrv') { S.kv.srvUrl = view.querySelector('#surl').value.trim(); await kvSet('srvUrl', S.kv.srvUrl); const ok = await fetchSrv(true); if (ok) render(); }

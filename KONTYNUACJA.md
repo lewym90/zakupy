@@ -1,6 +1,6 @@
 # KONTYNUACJA: Zakupy (prywatna aplikacja PWA do cen, ofert i budżetu)
 
-> Ten plik ma pozwolić nowemu Claude (na nowym koncie) przejąć pracę bez utraty kontekstu. Jest w PUBLICZNYM repozytorium, więc nie ma w nim żadnych kluczy, tokenów ani adresów prywatnego serwera. Stan na 2026-11-02, wersja aplikacji 0.4.1.
+> Ten plik ma pozwolić nowemu Claude (na nowym koncie) przejąć pracę bez utraty kontekstu. Jest w PUBLICZNYM repozytorium, więc nie ma w nim żadnych kluczy, tokenów ani adresów prywatnego serwera. Stan na 2026-11-02, wersja aplikacji 0.5.0.
 
 ## 0. Co zrobić jako pierwsze (nowy Claude)
 1. Przeczytaj cały ten plik, potem `README.md` i `server/README.md`. Nie zaczynaj od zera i nie przepisuj działających rzeczy bez powodu.
@@ -76,6 +76,7 @@ Niezweryfikowane: odczyt zdjęcia paragonu przez Gemini na żywo i przycisk „S
 Biedronka: brak źródła; gazetki to płótno createjs z obrazami, trzeba zbadać viewer i adresy obrazów stron (przeglądarka w sesji dała dostęp do stron sklepów).
 
 ## 8. Zadania w kolejności
+Dodane w v0.5.0: zakładka Lista (`js/lista.js`, dane w kv `lista`): „+” przy ofercie, grupy po sklepach, filtr sklepu, odhaczanie, liczba sztuk, pozycje ręczne. Kategorie: `catOf` patrzy najpierw na słowa przed „z/do/o...”, a właściciel może poprawić kategorię w szczegółach oferty (kv `catFix`, wygrywa z automatem). Do zrobienia: mapowanie działów Kauflandu (`section`) na kategorie.
 1. ZROBIONE w v0.4.0: przebudowa odczytu ofert i widoku niepewnych ofert.
 2. Weryfikacja na serwerze: właściciel uruchamia aktualizację i odczyt; Claude analizuje log i `oferty.json` na przykładach (poproś o fragmenty).
 3. Biedronka.

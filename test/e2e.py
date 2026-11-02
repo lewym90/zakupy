@@ -146,6 +146,31 @@ try:
     check('nie można jej edytować' in pg.inner_text('.sheet') and pg.query_selector('.sheet #o-name') is None, 'serwer: oferta tylko do odczytu')
     pg.screenshot(path=f'{OUT}/09c-oferta-serwer.png'); pg.click('[data-close]')
     pg.reload(); pg.wait_for_selector('.tab'); pg.click('[data-tab="okazje"]'); check('Masło ekstra' in pg.inner_text('#view'), 'serwer: oferty zostają po przeładowaniu (pamięć telefonu)')
+    # lista zakupów: oferty z dwóch sklepów, grupowanie po sklepie, odhaczanie, ręczna pozycja, trwałość
+    pg.click('[data-tab="okazje"]'); pg.wait_for_selector('#oq')
+    pg.click('[data-act="addlist"][data-id="s:l4"]'); pg.wait_for_timeout(100); pg.click('[data-act="addlist"][data-id="s:k1"]'); pg.wait_for_timeout(100)
+    check(pg.get_attribute('[data-act="addlist"][data-id="s:k1"]', 'class') == 'addl on', 'lista: przycisk pokazuje, że oferta jest na liście')
+    pg.click('[data-act="offer"][data-id="s:l2"]'); pg.wait_for_selector('.sheet'); pg.click('[data-tolist]'); pg.wait_for_selector('.sheet', state='detached')
+    pg.screenshot(path=f'{OUT}/12-okazje-plus.png')
+    pg.click('[data-tab="lista"]'); pg.wait_for_selector('.lgroup')
+    hs = [h.inner_text() for h in pg.locator('.lgroup h2').all()]
+    check(hs == ['Kaufland', 'Lidl'], f'lista: sklepy jako nagłówki: {hs}')
+    t = pg.locator('.lgroup').nth(1).inner_text(); check('Coca-Cola Dwusztuk' in t and 'Pepsi' in t and 'Masło' not in t and 'gazetka Lidl, str. 14' in t and '2 do kupienia' in t, 'lista: w Lidlu tylko produkty z Lidla')
+    pg.click('[data-act="newitem"]'); pg.wait_for_selector('.i-name'); pg.fill('.i-name', 'Mleko'); pg.click('.sheet [data-s="Lidl"]'); pg.click('[data-save]'); pg.wait_for_selector('.sheet', state='detached')
+    pg.click('[data-act="lstore"][data-s="Lidl"]'); pg.wait_for_timeout(100)
+    check(pg.locator('.lgroup').count() == 1 and 'Mleko' in pg.inner_text('.lgroup'), 'lista: filtr pokazuje tylko jeden sklep')
+    pg.locator('.li-main').first.click(); pg.wait_for_timeout(100)
+    check(pg.locator('.li.done').count() == 1 and pg.locator('.li').last.get_attribute('class') == 'li done', 'lista: kupione idzie na dół')
+    pg.screenshot(path=f'{OUT}/13-lista-lidl.png', full_page=True)
+    pg.locator('[data-act="lqty"][data-d="1"]').first.click(); pg.wait_for_timeout(100)
+    pg.reload(); pg.wait_for_selector('.tab'); pg.click('[data-tab="lista"]'); pg.wait_for_selector('.lgroup'); check(pg.locator('.li').count() == 4 and pg.locator('.li.done').count() == 1, 'lista: zostaje po przeładowaniu')
+    pg.click('[data-act="lclear"]'); pg.wait_for_timeout(100); check(pg.locator('.li').count() == 3, 'lista: usuń kupione')
+    pg.click('[data-tab="okazje"]'); pg.wait_for_selector('.offer')
+    pg.click('[data-act="offer"][data-id="s:k1"]'); pg.wait_for_selector('.o-cat'); pg.select_option('.o-cat', 'spizarnia'); pg.wait_for_timeout(100); pg.click('[data-close]')
+    pg.reload(); pg.wait_for_selector('.tab'); pg.click('[data-tab="okazje"]'); pg.wait_for_selector('.offer'); pg.click('[data-act="offer"][data-id="s:k1"]'); pg.wait_for_selector('.o-cat')
+    check(pg.input_value('.o-cat') == 'spizarnia', 'kategoria poprawiona ręcznie zostaje'); pg.click('[data-close]')
+    pg.set_viewport_size({'width': 360, 'height': 740}); pg.click('[data-tab="lista"]'); pg.wait_for_timeout(100); check(pg.evaluate('document.documentElement.scrollWidth - innerWidth') <= 0, '360 px: siedem zakładek bez przewijania')
+    labels = pg.evaluate("[...document.querySelectorAll('.tab')].every(b => b.scrollWidth <= b.clientWidth + 1)"); check(labels, '360 px: podpisy zakładek się mieszczą'); pg.screenshot(path=f'{OUT}/14-lista-360.png'); pg.set_viewport_size({'width': 390, 'height': 844})
     pg.click('[data-tab="start"]')
 
     # offline po pierwszym załadowaniu (service worker)
@@ -157,7 +182,7 @@ try:
     # tablet i laptop (te same dane): sprawdzenie układu bez poziomego przewijania
     for name, (w, h) in {'tablet': (820, 1180), 'laptop': (1366, 800)}.items():
         pg.set_viewport_size({'width': w, 'height': h})
-        for tab in ['start', 'paragony', 'cennik', 'okazje', 'budzet', 'ustawienia']:
+        for tab in ['start', 'paragony', 'cennik', 'okazje', 'lista', 'budzet', 'ustawienia']:
             pg.click(f'[data-tab="{tab}"]'); pg.wait_for_timeout(120)
             if tab == 'okazje': pg.click('[data-act="omode"][data-m="porownanie"]'); pg.wait_for_timeout(80)
             pg.screenshot(path=f'{OUT}/r-{name}-{tab}.png')

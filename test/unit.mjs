@@ -108,5 +108,22 @@ eq(effectiveModel('gemini-2.5-flash'), DEFAULT_MODEL, 'wycofany model => domyśl
   eq(flyerUrl({ store: 'Lidl', section: 'gazetka-02-11-pon-kw45', page: 10 }), 'https://www.lidl.pl/l/pl/gazetki/gazetka-02-11-pon-kw45/view/flyer/page/10', 'link do strony gazetki');
   eq(flyerUrl({ store: 'Kaufland', section: 'Napoje' }), '', 'bez linku poza gazetką');
 }
+{
+  const eq = (a, b, m) => { if (JSON.stringify(a) !== JSON.stringify(b)) { bad++; console.log('FAIL', m, JSON.stringify(a), '!=', JSON.stringify(b)); } };
+  const cases = { 'Migdały blanszowane': 'slodycze', 'Alesto Migdały blanszowane, filetowane': 'slodycze', 'Whiskas Karma z kurczakiem': 'zwierzeta', 'Chipsy o smaku papryki': 'slodycze', 'Ciastka z jabłkiem': 'slodycze',
+    'Pizza z szynką': 'mrozonki', 'Zupa z kurczaka': 'spizarnia', 'Woda micelarna': 'chemia', 'Masło orzechowe': 'spizarnia', 'Krem do rąk z masłem shea': 'chemia', 'Filet z dorsza': 'ryby', 'Filet z piersi kurczaka': 'mieso',
+    'Czekolada z orzechami': 'slodycze', 'Rolada ogrodowa': 'slodycze', 'Herbatniki': 'slodycze', 'Herbata czarna': 'kawa', 'Pianka do golenia': 'chemia', 'Garnier Farba do włosów': 'chemia', 'Rodzynki': 'slodycze', 'Gillette Maszynka do golenia': 'chemia' };
+  for (const [n, c] of Object.entries(cases)) eq(catOf(n), c, n);
+  const { itemFromOffer, byStore } = await import('../js/lista.js');
+  const zl = c => (c / 100).toFixed(2).replace('.', ',') + ' zł';
+  const cola = itemFromOffer({ id: 'a', store: 'Lidl', name: 'Coca-Cola', price: 998, amount: 1, unit: 'l', mode: 'bundle', need: 2, promo: 'Dwusztuk', page: 10, cond: 'z Lidl Plus', deposit: 100, conf: 'ok' }, zl);
+  eq([cola.price, cola.pack, cola.promo, cola.where, cola.unit.price], [998, '2 × 1 l = 2 l', 'Dwusztuk', 'gazetka Lidl, str. 10', 499], 'pozycja z oferty');
+  const un = itemFromOffer({ id: 'b', store: 'Kaufland', name: 'X', price: 500, amount: 1, unit: 'szt', mode: 'unit', need: 1, conf: 'check', printed: '2 x 1 L' }, zl);
+  eq([un.unit, un.pack, un.unsure], [null, '2 x 1 L', true], 'niepewna pozycja bez przeliczeń');
+  const g = byStore([{ ...un, done: true }, cola, { ...cola, id: 'c', qty: 2, done: true }, { id: 'd', name: 'Mleko', store: 'Lidl', price: 0, qty: 1 }]);
+  eq(g.map(x => [x.store, x.left, x.sum, x.noPrice]), [['Lidl', 2, 998, 1], ['Kaufland', 0, 0, 0]], 'grupy: sklepy z zakupami najpierw, kupione nie liczą się do sumy');
+  eq(g[0].items.map(i => i.done || false), [false, false, true], 'kupione na dole');
+  eq(byStore([cola, un], 'Lidl').length, 1, 'filtr sklepu');
+}
 console.log(bad ? bad + ' błędów' : 'unit OK');
 process.exit(bad ? 1 : 0);
