@@ -17,3 +17,10 @@ const st = monthStats(rs, '2026-10'); eq(st.spent, 2400 + 3000 + 2200 + 1500, 'w
 const st2 = monthStats([{ id: 'x', date: '2026-11-02', store: 'Lidl', declared: 0, lines: [{ name: 'A', cat: 'inne', qty: 1, unit: 'szt', total: 1000, reg: 0 }, { name: 'Rabat', cat: 'inne', qty: 1, unit: 'szt', total: -300, reg: 0 }] }], '2026-11'); eq(st2.saved, 300, 'rabat liczony jako oszczędność'); eq(st2.spent, 700, 'wydane po rabacie');
 console.log(bad ? bad + ' błędów' : 'unit OK');
 process.exit(bad ? 1 : 0);
+
+// wersja w app.js i sw.js musi być taka sama (inaczej aktualizacja się nie pobierze)
+import { readFileSync } from 'node:fs';
+const av = /VERSION = '([^']+)'/.exec(readFileSync(new URL('../js/app.js', import.meta.url), 'utf8'))[1];
+const sv = /VER = 'zakupy-v([^']+)'/.exec(readFileSync(new URL('../sw.js', import.meta.url), 'utf8'))[1];
+if (av !== sv) { console.error('Różne wersje: app.js ' + av + ' vs sw.js ' + sv); process.exit(1); }
+console.log('wersje zgodne', av);

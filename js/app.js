@@ -4,7 +4,7 @@ import { esc, zl, zlShort, parseMoney, parseNum, centsToInput, norm, uid, todayI
 import { products, matchProduct, verdict, monthStats, monthTotals, receiptTotal, lineSum } from './calc.js';
 import { readReceipt, DEFAULT_MODEL } from './gemini.js';
 
-const VERSION = '0.1.1';
+const VERSION = '0.1.2';
 const NOW_YM = () => todayISO().slice(0, 7);
 const S = { receipts: [], offers: [], kv: {}, tab: 'start', ym: NOW_YM(), q: '', cat: '', ocat: '', lastStore: 'Biedronka' };
 const view = document.getElementById('view');
@@ -14,9 +14,10 @@ const ICON = {
   paragony: '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9.5 8h5M9.5 12h5"/>',
   cennik: '<path d="M3 12 12 3h8v8l-9 9z"/><circle cx="15.5" cy="8.5" r="1.3"/>',
   okazje: '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
+  ustawienia: '<circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M18.7 5.3l-2.1 2.1M7.4 16.6l-2.1 2.1"/>',
   budzet: '<path d="M3 7.5h17a1 1 0 0 1 1 1V19a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M3 7.5 5.5 4h11"/><circle cx="16.5" cy="13.5" r="1.2"/>',
 };
-const TABS = [['start', 'Start'], ['paragony', 'Paragony'], ['cennik', 'Cennik'], ['okazje', 'Okazje'], ['budzet', 'Budżet']];
+const TABS = [['start', 'Start'], ['paragony', 'Paragony'], ['cennik', 'Cennik'], ['okazje', 'Okazje'], ['budzet', 'Budżet'], ['ustawienia', 'Ustawienia']];
 
 function toast(msg) {
   const t = document.getElementById('toast');
@@ -33,10 +34,11 @@ async function init() {
     `<button class="tab" data-tab="${id}"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON[id]}</svg>${n}</button>`).join('');
   document.getElementById('tabbar').addEventListener('click', e => {
     const b = e.target.closest('[data-tab]'); if (!b) return;
+    if (S.reload) { location.reload(); return; }
     S.tab = b.dataset.tab; window.scrollTo(0, 0); render();
   });
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  startUpdates();
   render();
 }
 
@@ -48,7 +50,7 @@ function render() {
 }
 
 /* ---------- ekrany ---------- */
-const SCREENS = { start, paragony, cennik, okazje, budzet };
+const SCREENS = { start, paragony, cennik, okazje, budzet, ustawienia };
 
 function receiptEmoji(r) {
   const sums = {};
@@ -158,16 +160,89 @@ function budzet() {
     <div class="card"><label class="field" style="margin:0"><span>Limit miesięczny na zakupy (zł)</span><div class="row" style="flex-wrap:nowrap"><input id="limit" inputmode="decimal" value="${limit ? centsToInput(limit).replace(',00', '') : ''}" placeholder="np. 3000"><button class="btn" data-act="savelimit">Zapisz</button></div></label></div>
     <h2>Ostatnie 6 miesięcy</h2><div class="card">${hist}<p class="hint" style="margin:6px 0 0">${limit ? 'Przerywana linia to Wasz limit.' : 'Po ustawieniu limitu zobaczysz tu linię limitu.'}</p></div>
     <h2>Ten miesiąc wg kategorii</h2><div class="card">${rows || '<p class="hint" style="margin:0">Po dodaniu paragonów zobaczysz tu podział wydatków. Dotknij kategorii, żeby ustawić jej limit.</p>'}</div>
+    `;
+}
+
+/* ---------- ustawienia ---------- */
+function ustawienia() {
+  const key = S.kv.geminiKey || '';
+  const n = S.receipts.length, nl = S.receipts.reduce((x, r) => x + r.lines.length, 0);
+  return `<div class="head"><div><h1>Ustawienia</h1><p class="sub">Zakupy ${VERSION}</p></div></div>
+    <h2>Aplikacja</h2><div class="card">
+      <div class="kv"><span>Zainstalowana wersja</span><b>${VERSION}</b></div>
+      <div class="kv"><span>Najnowsza na serwerze</span><b id="upd-latest">—</b></div>
+      <p class="hint" id="upd-status" style="margin:8px 0 12px">Przy każdym uruchomieniu aplikacja sama sprawdza, czy jest nowa wersja.</p>
+      <button class="btn" style="width:100%;margin-bottom:8px" data-act="upd">Sprawdź i pobierz aktualizację</button>
+      <button class="lnk" data-act="forceupd">Coś nie działa? Wymuś pełne odświeżenie</button>
+      <p class="hint" style="margin:6px 0 0">Pełne odświeżenie czyści tylko pliki aplikacji. Paragonów i ustawień nie rusza.</p></div>
+    <h2>Odczyt zdjęć paragonów (Gemini)</h2><div class="card">
+      <div class="kv"><span>Klucz</span><b class="${key ? 'down' : 'up'}">${key ? 'Zapisany ✓' : 'Brak'}</b></div>
+      <p class="hint" style="margin:8px 0 10px">Darmowy klucz zrobisz na aistudio.google.com (Get API key). Zostaje tylko w tym telefonie i nie trafia do kopii zapasowej. Wynik odczytu zawsze trzeba sprawdzić, a aplikacja porównuje sumę pozycji z sumą na paragonie.</p>
+      <label class="field"><span>Klucz API</span><div class="row" style="flex-wrap:nowrap"><input id="gkey" type="password" autocomplete="off" value="${esc(key)}" placeholder="wklej klucz"><button class="btn ghost sm" data-act="showkey" aria-label="Pokaż lub ukryj klucz">Pokaż</button></div></label>
+      <label class="field"><span>Model</span><input id="gmodel" value="${esc(S.kv.geminiModel || DEFAULT_MODEL)}"></label>
+      <p class="hint" id="key-status" style="margin:0 0 10px"></p>
+      <div class="row"><button class="btn sm" data-act="savegem">Zapisz</button><button class="btn ghost sm" data-act="testkey">Sprawdź klucz</button>${key ? '<button class="btn ghost sm" data-act="delkey">Usuń klucz</button>' : ''}</div></div>
     <h2>Dane i kopie</h2><div class="card">
-      <p class="hint" style="margin:0 0 12px">Wszystkie dane są tylko w tym telefonie. Zapisuj kopię od czasu do czasu.</p>
+      <div class="kv"><span>Paragony</span><b>${n}</b></div>
+      <div class="kv"><span>Pozycje</span><b>${nl}</b></div>
+      <div class="kv"><span>Okazje</span><b>${S.offers.length}</b></div>
+      <p class="hint" style="margin:8px 0 12px">Wszystkie dane są tylko w tym telefonie. Zapisuj kopię od czasu do czasu, szczególnie przed zmianą telefonu.</p>
       <div class="row"><button class="btn ghost sm" data-act="export">Zapisz kopię</button><button class="btn ghost sm" data-act="import">Wczytaj kopię</button></div>
       <input type="file" id="impfile" accept="application/json" hidden>
-      <h3 style="margin:20px 0 4px;font-size:15px">Odczyt zdjęć paragonów (Gemini)</h3>
-      <p class="hint" style="margin:0 0 10px">Opcjonalnie. Klucz zostaje w tym telefonie. Wynik zawsze trzeba sprawdzić, a aplikacja porównuje sumę pozycji z sumą na paragonie.</p>
-      <label class="field"><span>Klucz API</span><input id="gkey" type="password" autocomplete="off" value="${esc(S.kv.geminiKey || '')}" placeholder="wklej klucz"></label>
-      <label class="field"><span>Model</span><input id="gmodel" value="${esc(S.kv.geminiModel || DEFAULT_MODEL)}"></label>
-      <button class="btn ghost sm" data-act="savegem">Zapisz ustawienia</button></div>
-    <p class="hint" style="text-align:center;margin-top:18px">Zakupy ${VERSION}</p>`;
+      <p style="margin:16px 0 0"><button class="lnk dng" data-act="wipe">Usuń wszystkie dane z tego telefonu</button></p></div>
+    <h2>O aplikacji</h2><div class="card"><p class="hint" style="margin:0">Zakupy to prywatna aplikacja do własnego użytku. Ceny i oceny okazji liczą się wyłącznie z Waszych paragonów, a wszystkie obliczenia robi kod, nie AI. AI (Gemini) służy tylko do odczytania zdjęcia paragonu i zawsze podlega Waszej kontroli.</p></div>`;
+}
+
+/* ---------- aktualizacje ---------- */
+async function latestVersion() {
+  try {
+    const r = await fetch('sw.js?c=' + Date.now(), { cache: 'no-store' });
+    const m = /VER\s*=\s*'zakupy-v([^']+)'/.exec(await r.text());
+    return m ? m[1] : null;
+  } catch (_) { return null; }
+}
+function setUpd(txt, latest) {
+  const s = document.getElementById('upd-status'), l = document.getElementById('upd-latest');
+  if (s) s.textContent = txt;
+  if (l && latest !== undefined) l.textContent = latest || 'brak połączenia';
+}
+function startUpdates() {
+  if (!('serviceWorker' in navigator)) return;
+  const had = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!had || S.reloading) return;
+    S.reloading = true;
+    if (document.querySelector('.sheet')) { S.reload = true; toast('Nowa wersja gotowa. Zamknij okno i dotknij zakładki.'); S.reloading = false; }
+    else location.reload();
+  });
+  navigator.serviceWorker.register('sw.js').then(reg => reg.update()).catch(() => {});
+}
+async function manualUpdate() {
+  setUpd('Sprawdzam…');
+  const latest = await latestVersion();
+  if (!latest) { setUpd('Nie mogę sprawdzić. Brak internetu?', null); return; }
+  const reg = await navigator.serviceWorker.getRegistration();
+  if (latest === VERSION) { if (reg) await reg.update().catch(() => {}); setUpd('Masz najnowszą wersję.', latest); return; }
+  setUpd('Jest nowa wersja ' + latest + '. Pobieram i uruchamiam ponownie…', latest);
+  if (reg) await reg.update().catch(() => {});
+  setTimeout(() => { if (!S.reloading) forceRefresh(); }, 6000);
+}
+async function forceRefresh() {
+  S.reloading = true;
+  try {
+    for (const r of await navigator.serviceWorker.getRegistrations()) await r.unregister();
+    for (const k of await caches.keys()) await caches.delete(k);
+  } catch (_) {}
+  location.reload();
+}
+async function testKey() {
+  const k = view.querySelector('#gkey').value.trim(), st = view.querySelector('#key-status');
+  if (!k) { st.textContent = 'Najpierw wklej klucz.'; return; }
+  st.textContent = 'Sprawdzam…';
+  try {
+    const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=1', { headers: { 'x-goog-api-key': k } });
+    st.textContent = r.ok ? 'Klucz działa ✓' : (r.status === 400 || r.status === 403) ? 'Google odrzuca ten klucz. Sprawdź, czy skopiowałeś go w całości.' : 'Google odpowiedziało błędem ' + r.status + '.';
+  } catch (_) { st.textContent = 'Nie mogę połączyć się z Google. Brak internetu?'; }
 }
 
 /* ---------- arkusze ---------- */
@@ -431,7 +506,18 @@ view.addEventListener('click', async e => {
   else if (a === 'savelimit') { const v = parseMoney(view.querySelector('#limit').value); S.kv.limit = isNaN(v) || v < 0 ? 0 : v; await kvSet('limit', S.kv.limit); render(); toast(S.kv.limit ? 'Limit zapisany' : 'Limit usunięty'); }
   else if (a === 'export') doExport();
   else if (a === 'import') view.querySelector('#impfile').click();
-  else if (a === 'savegem') { S.kv.geminiKey = view.querySelector('#gkey').value.trim(); S.kv.geminiModel = view.querySelector('#gmodel').value.trim() || DEFAULT_MODEL; await kvSet('geminiKey', S.kv.geminiKey); await kvSet('geminiModel', S.kv.geminiModel); toast('Ustawienia zapisane'); }
+  else if (a === 'upd') manualUpdate();
+  else if (a === 'forceupd') { if (confirm('Pobrać aplikację od nowa? Dane zostaną nietknięte.')) forceRefresh(); }
+  else if (a === 'showkey') { const i = view.querySelector('#gkey'); i.type = i.type === 'password' ? 'text' : 'password'; b.textContent = i.type === 'password' ? 'Pokaż' : 'Ukryj'; }
+  else if (a === 'testkey') testKey();
+  else if (a === 'delkey') { S.kv.geminiKey = ''; await kvSet('geminiKey', ''); render(); toast('Klucz usunięty'); }
+  else if (a === 'wipe') {
+    if (!confirm('Usunąć WSZYSTKIE paragony, okazje i limity z tego telefonu? Tego nie da się cofnąć. Zapisz kopię, jeśli chcesz je zachować.')) return;
+    await clear('receipts'); await clear('offers');
+    for (const k of ['limit', 'catLimits']) { S.kv[k] = k === 'limit' ? 0 : {}; await kvSet(k, S.kv[k]); }
+    S.receipts = []; S.offers = []; render(); toast('Dane usunięte');
+  }
+  else if (a === 'savegem') { S.kv.geminiKey = view.querySelector('#gkey').value.trim(); S.kv.geminiModel = view.querySelector('#gmodel').value.trim() || DEFAULT_MODEL; await kvSet('geminiKey', S.kv.geminiKey); await kvSet('geminiModel', S.kv.geminiModel); render(); toast('Ustawienia zapisane'); }
 });
 
 init();

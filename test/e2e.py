@@ -74,6 +74,15 @@ try:
     pg.click('[data-tab="start"]'); pg.screenshot(path=f'{OUT}/10-start-limit.png')
     check('zostało' in pg.inner_text('.tape .of'), 'limit: zostało …')
 
+    pg.click('[data-tab="ustawienia"]')
+    check('0.1.2' in pg.inner_text('#view'), 'ustawienia pokazują wersję')
+    pg.fill('#gkey', 'TEST-KEY'); pg.fill('#gmodel', 'gemini-2.5-flash'); pg.click('[data-act="savegem"]'); pg.wait_for_function("document.getElementById('view').innerText.includes('Zapisany ✓')")
+    check('Zapisany' in pg.inner_text('#view'), 'klucz zapisany')
+    pg.click('[data-act="upd"]'); pg.wait_for_function("document.getElementById('upd-status').textContent.includes('najnowsz')", timeout=8000)
+    check(pg.inner_text('#upd-latest') == '0.1.2', 'najnowsza wersja z serwera = 0.1.2')
+    pg.screenshot(path=f'{OUT}/09b-ustawienia.png', full_page=True)
+    pg.click('[data-tab="start"]')
+
     # offline po pierwszym załadowaniu (service worker)
     pg.wait_for_function('navigator.serviceWorker.ready.then(()=>true)'); pg.reload(); time.sleep(1)
     ctx.set_offline(True); pg.reload(); pg.wait_for_selector('.tape'); check(True, 'działa offline po przeładowaniu'); ctx.set_offline(False)
