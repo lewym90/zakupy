@@ -57,10 +57,20 @@ def parse_rows(rows, today=None):
             warns.append(f'brak daty ważności: {name}')
             continue
         conf, note = verify(price, pack, base_t)
-        if not pack:
-            pack = dict(amount=1.0, unit='szt', conf='check', note='')
+        pb = parse_base_price(base_t)
+        if not pack:  # dane ze strony sklepu, bez AI: cena jest pewna, brakuje tylko ilości do przeliczenia
+            pack = dict(amount=1.0, unit='szt', conf='ok', note='')
+            conf, note = 'cena', 'sklep nie podaje ilości, więc nie ma ceny za jednostkę'
+        elif pack['conf'] == 'check':  # 350/260 g: kilka produktów w jednej cenie
+            conf, note = 'cena', 'kilka wariantów wielkości w tej samej cenie, więc cena za jednostkę zależy od wariantu'
+        elif conf == 'check' and pack['unit'] == 'szt' and pb and pb[0] == 'szt' and pb[1] > 0:
+            k = price / pb[1]  # sklep podaje cenę za sztukę: ilość wynika z ceny, o ile jest całkowita
+            if round(k) >= 1 and abs(k - round(k)) / round(k) <= 0.02:
+                pack = dict(pack, amount=float(round(k)))
+                conf, note = 'ok', ''
         o = make_offer('Kaufland', name, pack, price, old if old and old > price else 0, vf, vt,
                        cond='z kartą Kaufland Card XTRA' if card else '', section=sec, conf=conf, note=note, brand=brand)
+        o['printed'] = ' · '.join(x for x in [pack_t, base_t] if x)[:140]
         mb = parse_multibuy(' | '.join([disc, pack_t, sub, brand, full]))
         if mb:
             apply_multibuy(o, mb, price)

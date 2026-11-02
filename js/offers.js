@@ -8,8 +8,10 @@ import { norm } from './util.js';
 
 const TO_BASE = { szt: ['szt', 1], kg: ['kg', 1], g: ['kg', 0.001], l: ['l', 1], ml: ['l', 0.001] };
 export const UNITS = ['szt', 'kg', 'g', 'l', 'ml'];
-// Oferta z niepotwierdzonym odczytem: nie pokazujemy z niej żadnych liczb pochodnych i nie porównujemy jej.
-export const isSure = o => o.conf !== 'check';
+// isSure: jest potwierdzona cena za jednostkę. Tylko takie oferty mają przeliczenia, ocenę i porównanie.
+export const isSure = o => o.conf !== 'check' && o.conf !== 'cena';
+// isHidden: niepotwierdzony odczyt, domyślnie ukryty. conf 'cena' to pewna cena bez przeliczenia (np. kilka wariantów), więc jest widoczna.
+export const isHidden = o => o.conf === 'check';
 
 export function offerCalc(o) {
   const [base, f] = TO_BASE[o.unit] || ['szt', 1];

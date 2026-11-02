@@ -1,6 +1,6 @@
 # KONTYNUACJA: Zakupy (prywatna aplikacja PWA do cen, ofert i budżetu)
 
-> Ten plik ma pozwolić nowemu Claude (na nowym koncie) przejąć pracę bez utraty kontekstu. Jest w PUBLICZNYM repozytorium, więc nie ma w nim żadnych kluczy, tokenów ani adresów prywatnego serwera. Stan na 2026-11-02, wersja aplikacji 0.4.0.
+> Ten plik ma pozwolić nowemu Claude (na nowym koncie) przejąć pracę bez utraty kontekstu. Jest w PUBLICZNYM repozytorium, więc nie ma w nim żadnych kluczy, tokenów ani adresów prywatnego serwera. Stan na 2026-11-02, wersja aplikacji 0.4.1.
 
 ## 0. Co zrobić jako pierwsze (nowy Claude)
 1. Przeczytaj cały ten plik, potem `README.md` i `server/README.md`. Nie zaczynaj od zera i nie przepisuj działających rzeczy bez powodu.
@@ -13,6 +13,7 @@
 - Serwer obsługuje przez Termius (SSH, użytkownik root, host `lewym90`). **Jedna komenda naraz**, gotowa do wklejenia, z jasnym opisem kroku po kroku. Nie każ mu nic wymyślać ani czytać długich instrukcji.
 - **Klucze, hasła i tokeny nigdy w czacie ani w repo.** Klucz Gemini właściciel wpisuje sam: w aplikacji (Ustawienia) i w pliku `/etc/zakupy-zbieracz.env` na serwerze (`GEMINI_API_KEY=`). Token adresu ofert jest tylko na serwerze w tym samym pliku.
 - Właściciel jest zniecierpliwiony, gdy Claude „pajacuje”, zgaduje albo wciska nieprzetestowane rzeczy. Mów wprost, co działa, a co nie. Nie deklaruj, że coś działa, jeśli nie sprawdziłeś na prawdziwych danych.
+- Instalator wypisuje na końcu token adresu ofert: nigdy nie proś o wklejenie tej linii (nie używaj `| tail -1`), kieruj wynik instalatora do `>/dev/null`.
 - Testuj sam (Playwright w piaskownicy), zanim cokolwiek wyślesz. Piaskownica Claude NIE ma dostępu do stron sieci handlowych; testy źródeł idą na atrapach, realne sprawdzenie robi serwer właściciela (poproś o log: `journalctl -u zakupy-zbieracz -n 30 --no-pager | cut -c1-170`).
 - Repo jest publiczne: bez skopiowanych danych ofert sieci, bez sekretów. Oferty trafiają na prywatny serwer pod tajnym adresem i do telefonu.
 - Wygląd ma być bardzo ładny, schludny i czytelny na telefonie, tablecie i laptopie.
@@ -53,7 +54,7 @@ Właściciel wstawił zrzuty ekranu strony 10–11 gazetki Lidl (`lidl.pl/l/pl/g
 - **Przyczyna:** model wpisał do pola `opakowanie` tekst już zawierający mnożnik („2 x 1 L”, „4 x 2 L”), a kod pomnożył jeszcze raz przez `komplet_ilosc`, czyli policzył liczbę sztuk podwójnie. Kontrola `verify_any` porównuje cenę jednej sztuki z ceną jednostkową ze strony, więc taka oferta dostała `conf:'check'` („odczyt do sprawdzenia”), ale **aplikacja mimo to pokazała błędną cenę za litr**, co jest niedopuszczalne. Dodatkowo kaucja (osobna, nieliczona w cenie jednostkowej) bywa mylona z ceną.
 - Wniosek właściciela (dosłownie w sensie): nie można ufać Gemini; „to wszystko musi być przebudowane od nowa”. Gemini sprawdza się tylko jako czytnik tekstu, nie jako źródło liczb.
 
-**Stan po v0.4.0:** przyczyna usunięta w kodzie. Gemini tylko przepisuje tekst (nowy prompt, klucz cache `|v3`), a `normalize.interpret` układa możliwe odczytania i przyjmuje tylko takie, które zgadza się z wydrukowaną ceną jednostkową (±2%, kaucja osobno). Bez tej ceny wystarcza zgodny druk „N x cena = suma kompletu”. W innym wypadku oferta dostaje `conf:'check'`: bez przeliczeń, poza porównaniem, ukryta za paskiem „Ukryto N ofert” z przyciskiem „Pokaż”. Złote testy: `server/test/test_zlote.py`. Niezweryfikowane: prawdziwy odczyt nowego promptu przez Gemini.
+**Stan po v0.4.0:** przyczyna usunięta w kodzie. Gemini tylko przepisuje tekst (nowy prompt, klucz cache `|v3`), a `normalize.interpret` układa możliwe odczytania i przyjmuje tylko takie, które zgadza się z wydrukowaną ceną jednostkową (±2%, kaucja osobno). Bez tej ceny wystarcza zgodny druk „N x cena = suma kompletu”. W innym wypadku oferta dostaje `conf:'check'`: bez przeliczeń, poza porównaniem, ukryta za paskiem „Ukryto N ofert” z przyciskiem „Pokaż”. Złote testy: `server/test/test_zlote.py`. Od v0.4.1 jest trzeci stan `conf:'cena'` (Kaufland, dane bez AI): cena pewna, ale bez ceny za jednostkę (kilka wariantów, brak ilości). Taka oferta jest widoczna, tylko bez przeliczeń, oceny i porównania. Niezweryfikowane: prawdziwy odczyt nowego promptu przez Gemini.
 
 ## 6. Plan przebudowy (zalecany; uzgodnij z właścicielem)
 Wykonane w v0.4.0: punkty 1-5, 7, 8 (link do strony gazetki w szczegółach oferty, bez miniatury), 9 (nowy klucz cache). Otwarte: punkt 6.

@@ -177,6 +177,19 @@ class Czas(unittest.TestCase):
             r.read_json(b'x', 'p')
         self.assertIn('null', str(cm.exception))
 
+    def test_kaufland_pewna_cena_bez_przeliczenia(self):
+        import kaufland
+        v = 'Oferta ważna od 29.10. do 04.11.'
+        wiersz = lambda nazwa, pack, base, cena: ['Dom', v, 'Marka', nazwa, pack, base, '', cena, '', 0, '']
+        o = kaufland.parse_rows([wiersz('Spray', '750/435 ml opakowanie', '', '14,99')], dt.date(2026, 11, 2))[0][0]
+        self.assertEqual((o['conf'], o['price'], o['printed']), ('cena', 1499, '750/435 ml opakowanie'))
+        o = kaufland.parse_rows([wiersz('Farba', 'opakowanie', '', '21,99')], dt.date(2026, 11, 2))[0][0]
+        self.assertEqual(o['conf'], 'cena')
+        o = kaufland.parse_rows([wiersz('Maszynki', 'sztuka', '(=1 szt 3,00)', '8,99')], dt.date(2026, 11, 2))[0][0]
+        self.assertEqual((o['conf'], o['amount'], o['unit']), ('ok', 3.0, 'szt'))  # ilość wynika z ceny za sztukę ze sklepu
+        o = kaufland.parse_rows([wiersz('Ser', '300 g', '(=1 kg 99,99)', '11,39')], dt.date(2026, 11, 2))[0][0]
+        self.assertEqual(o['conf'], 'check')  # waga niezgodna: nadal niepewne
+
     def test_timeout_to_ponowienie(self):
         import gemini, urllib.request
         calls = []

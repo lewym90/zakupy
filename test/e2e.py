@@ -111,7 +111,8 @@ try:
     feed = {'v': 1, 'updated': _dt.datetime.now().isoformat(), 'stores': {'Kaufland': {'ok': True, 'count': 1}, 'Lidl': {'ok': False, 'msg': 'Brak klucza Gemini'}},
             'offers': [mk('k1', 'Kaufland', 'Masło ekstra Łaciate', 649, 200, 'ok'), mk('l1', 'Lidl', 'Masło polskie', 599, 200, 'check'), dict(mk('l2', 'Lidl', 'Pepsi napój gazowany', 1498, 2000, 'ml'), mode='bundle', need=3, pay=2, page=14, section='gazetka-02-11-pon-kw45'),
               dict(mk('l3', 'Lidl', 'Coca-Cola zły odczyt', 998, 2000, 'check'), unit='ml', printed='Dwusztuk 2 x 1 L · 1 L = 4,99', note='cena za jednostkę wg sklepu 4.99, odczyt jej nie potwierdza'),
-              dict(mk('l4', 'Lidl', 'Coca-Cola Dwusztuk', 998, 1000, 'ok'), unit='ml', mode='bundle', need=2, promo='Dwusztuk', deposit=100)]}
+              dict(mk('l4', 'Lidl', 'Coca-Cola Dwusztuk', 998, 1000, 'ok'), unit='ml', mode='bundle', need=2, promo='Dwusztuk', deposit=100),
+              dict(mk('k2', 'Kaufland', 'CIF Spray wariantowy', 1499, 750, 'cena'), printed='750/435 ml opakowanie', note='kilka wariantów wielkości w tej samej cenie, więc cena za jednostkę zależy od wariantu')]}
     pg.route('**/oferty-test.json', lambda r: r.fulfill(status=200, content_type='application/json', headers={'access-control-allow-origin': '*'}, body=json.dumps(feed)))
     pg.click('[data-tab="ustawienia"]'); pg.fill('#surl', 'http://localhost:8765/oferty-test.json'); pg.click('[data-act="savesrv"]')
     pg.wait_for_function("document.getElementById('view').innerText.includes('Brak klucza Gemini')", timeout=5000)
@@ -127,6 +128,8 @@ try:
     pg.click('.offer.unsure'); pg.wait_for_selector('.sheet'); c_ = pg.inner_text('.sheet')
     check('Na gazetce' in c_ and 'Za 1 l' not in c_ and 'Zawartość' not in c_ and 'Odczytu nie dało się potwierdzić' in c_, 'niepewna oferta: szczegóły bez przeliczeń')
     pg.click('[data-close]'); pg.click('[data-act="ounsure"]'); pg.wait_for_timeout(100)
+    pg.fill('#oq', 'wariantowy'); pg.wait_for_timeout(150); t = pg.inner_text('#view')
+    check('14,99' in t and '750/435 ml' in t and 'bez ceny za jednostkę' in t and 'Za 1' not in t and 'Nic nie pasuje' not in t, 'kilka wariantów: oferta widoczna, pewna cena, bez przeliczenia')
     pg.fill('#oq', 'dwusztuk'); pg.wait_for_timeout(150); t = pg.inner_text('#view')
     check('Dwusztuk' in t and '2 × 1 l = 2 l' in t and '4,99' in t and '+ kaucja 1,00' in t, 'Dwusztuk: 2 × 1 l = 2 l, 4,99 zł za litr, kaucja osobno: ' + t.replace('\n', ' | ')[:300])
     pg.fill('#oq', ''); pg.click('[data-act="omode"][data-m="porownanie"]'); pg.wait_for_timeout(100)

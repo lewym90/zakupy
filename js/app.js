@@ -3,9 +3,9 @@ import { CATS, catOf, catById, STORES } from './cats.js';
 import { esc, zl, zlShort, parseMoney, parseNum, centsToInput, norm, uid, todayISO, ymOf, monthName, monthShort, addMonth, daysInMonth, fmtDate } from './util.js';
 import { products, matchProduct, verdict, monthStats, monthTotals, receiptTotal, lineSum } from './calc.js';
 import { readReceipt, DEFAULT_MODEL, effectiveModel, listModels, pickFlash } from './gemini.js';
-import { offerCalc, compareGroups, familyOf, offerLabel, UNITS, packLabel, unitPrice, promoLabel, whereLabel, isMulti, isSure, flyerUrl } from './offers.js';
+import { offerCalc, compareGroups, familyOf, offerLabel, UNITS, packLabel, unitPrice, promoLabel, whereLabel, isMulti, isSure, isHidden, flyerUrl } from './offers.js';
 
-const VERSION = '0.4.0';
+const VERSION = '0.4.1';
 const NOW_YM = () => todayISO().slice(0, 7);
 const S = { receipts: [], offers: [], kv: {}, tab: 'start', omode: 'lista', ym: NOW_YM(), q: '', cat: '', ocat: '', lastStore: 'Biedronka', srv: null, oq: '', ounsure: false };
 const view = document.getElementById('view');
@@ -162,11 +162,11 @@ const promoPill = o => { const t = promoLabel(o, zl); return t ? `<span class="p
 const depositLine = o => (o.deposit ? `<span class="hint">+ kaucja ${zl(o.deposit)} (poza ceną)</span>` : '');
 const whereLine = o => { const w = whereLabel(o); return w ? `<span class="hint">Szukaj: ${esc(w)}</span>` : ''; };
 function offerCard(o, v) {
-  const c = offerCalc(o), multi = isMulti(o);
-  if (!isSure(o)) return `<button class="offer unsure" data-act="offer" data-id="${o.id}"><span class="em">${catById(o.cat).e}</span>
+  const c = offerCalc(o), multi = isMulti(o), hid = isHidden(o);
+  if (!isSure(o)) return `<button class="offer${hid ? ' unsure' : ''}" data-act="offer" data-id="${o.id}"><span class="em">${catById(o.cat).e}</span>
     <span class="mid"><span class="t">${esc(o.name)}</span><span class="hint">${esc(o.store)} · do ${fmtDate(o.until)}${o.cond ? ' · ' + esc(o.cond) : ''}</span>
-      ${promoPill(o)}${o.printed ? `<span class="hint">Na gazetce: ${esc(o.printed)}</span>` : ''}${whereLine(o)}<span class="pill nodata">odczyt niepewny</span></span>
-    <span class="p num"><b>${zl(c.total)}</b><small>cena z odczytu</small></span></button>`;
+      ${promoPill(o)}${o.printed ? `<span class="hint">${hid ? 'Na gazetce' : 'W sklepie'}: ${esc(o.printed)}</span>` : ''}${whereLine(o)}<span class="pill nodata">${hid ? 'odczyt niepewny' : 'bez ceny za jednostkę'}</span></span>
+    <span class="p num"><b>${zl(c.total)}</b><small>${hid ? 'cena z odczytu' : 'za opakowanie'}</small>${o.old ? `<s>${zl(o.old)}</s>` : ''}</span></button>`;
   const u = unitPrice(o);
   return `<button class="offer" data-act="offer" data-id="${o.id}"><span class="em">${catById(o.cat).e}</span>
     <span class="mid"><span class="t">${esc(o.name)}</span><span class="hint">${esc(o.store)} · do ${fmtDate(o.until)}${o.cond ? ' · ' + esc(o.cond) : ''}</span>
@@ -179,7 +179,7 @@ function offerCard(o, v) {
 function okazje() {
   const today = todayISO();
   const every = allOffers(), all = every.filter(o => o.until >= today), old = S.offers.filter(o => o.until < today).length;
-  const nUnsure = all.filter(o => !isSure(o)).length, act = S.ounsure ? all : all.filter(isSure);
+  const nUnsure = all.filter(isHidden).length, act = S.ounsure ? all : all.filter(o => !isHidden(o));
   const nOf = `${nUnsure} ${nUnsure === 1 ? 'ofertę' : nUnsure % 10 >= 2 && nUnsure % 10 <= 4 && !(nUnsure % 100 >= 12 && nUnsure % 100 <= 14) ? 'oferty' : 'ofert'}`;
   const unsureBar = nUnsure ? `<p class="unsure-bar">${S.ounsure ? `Pokazuję też ${nOf} z niepewnym odczytem: tylko cena, bez przeliczeń.` : `Ukryto ${nOf} z niepewnym odczytem.`} <button class="lnk" data-act="ounsure">${S.ounsure ? 'Ukryj' : 'Pokaż'}</button></p>` : '';
   const seg = `<div class="seg" role="tablist"><button aria-pressed="${S.omode === 'lista'}" data-act="omode" data-m="lista">Lista</button><button aria-pressed="${S.omode === 'porownanie'}" data-act="omode" data-m="porownanie">Porównanie</button></div>`;
@@ -493,18 +493,18 @@ function openSrvOffer(o) {
   const c = offerCalc(o), v = offerVerdict(o), sure = isSure(o);
   const el = sheet('Oferta ' + o.store, `<h2 style="margin-top:0">${esc(o.name)}</h2>
     ${promoPill(o) ? `<p style="margin:0 0 8px">${promoPill(o)}</p>` : ''}
-    <div class="kv"><span>${sure ? `Cena ${c.need > 1 && o.mode !== 'unit' ? 'kompletu' : 'opakowania'}` : 'Cena z odczytu'}</span><b>${zl(c.total)}</b></div>
+    <div class="kv"><span>${isHidden(o) ? 'Cena z odczytu' : `Cena ${c.need > 1 && o.mode !== 'unit' ? 'kompletu' : 'opakowania'}`}</span><b>${zl(c.total)}</b></div>
     ${o.old ? `<div class="kv"><span>Cena przed obniżką</span><b>${zl(o.old)}</b></div>` : ''}
     ${sure ? `<div class="kv"><span>Zawartość</span><b>${esc(packLabel(o))}</b></div>
     <div class="kv"><span>Za ${esc(unitPrice(o).label)}</span><b>${zl(unitPrice(o).price)}</b></div>` : ''}
-    ${o.printed ? `<div class="kv"><span>Na gazetce</span><b>${esc(o.printed)}</b></div>` : ''}
+    ${o.printed ? `<div class="kv"><span>${o.store === 'Lidl' ? 'Na gazetce' : 'W sklepie'}</span><b>${esc(o.printed)}</b></div>` : ''}
     ${o.deposit ? `<div class="kv"><span>Kaucja (poza ceną)</span><b>${zl(o.deposit)}</b></div>` : ''}
     <div class="kv"><span>Ważna</span><b>${o.from ? fmtDate(o.from) + ' – ' : 'do '}${fmtDate(o.until)}</b></div>
     ${o.cond ? `<div class="kv"><span>Warunek</span><b>${esc(o.cond)}</b></div>` : ''}
     ${whereLabel(o) ? `<div class="kv"><span>Gdzie szukać</span><b>${esc(whereLabel(o))}</b></div>` : ''}
     ${flyerUrl(o) ? `<p><a class="lnk" href="${esc(flyerUrl(o))}" target="_blank" rel="noopener">Otwórz tę stronę gazetki</a></p>` : ''}
     ${sure && v ? `<p><span class="pill ${v.t}">${esc(v.txt)}</span></p>` : ''}
-    ${sure ? '' : `<p class="hint">Odczytu nie dało się potwierdzić${o.note ? ': ' + esc(o.note) : ''}. Dlatego nie ma tu przeliczeń ani oceny. Sprawdź ofertę na gazetce.</p>`}
+    ${isHidden(o) ? `<p class="hint">Odczytu nie dało się potwierdzić${o.note ? ': ' + esc(o.note) : ''}. Dlatego nie ma tu przeliczeń ani oceny. Sprawdź ofertę u źródła.</p>` : sure ? '' : `<p class="hint">Cena jest pewna, ale ${esc(o.note || 'nie da się policzyć ceny za jednostkę')}.</p>`}
     <p class="hint">Oferta pobrana automatycznie z serwera, więc nie można jej edytować.</p>`);
   return el;
 }

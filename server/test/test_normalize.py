@@ -81,7 +81,7 @@ class Kaufland(unittest.TestCase):
         self.assertAlmostEqual(unit_price(o['price'], o['amount'], o['unit'])[1], 349.5)
 
     def test_verification(self):
-        self.assertEqual(self.by['Kotlin Ketchup']['conf'], 'check')  # warianty wagi
+        self.assertEqual(self.by['Kotlin Ketchup']['conf'], 'cena')  # warianty wagi: cena pewna, bez przeliczenia
         self.assertEqual(self.by['MillWash Kapsułki do zmywarki']['conf'], 'check')  # cena/jedn. sklepu się nie zgadza
         self.assertIn('wg sklepu', self.by['MillWash Kapsułki do zmywarki']['note'])
         for n in ['Morliny Kebab z kurczaka', 'Actimel Napój probiotyczny', 'Indykpol Pierś wędzona', 'Skrzydła z kurczaka', 'Tyskie Gronie Piwo 5,2% alk.']:

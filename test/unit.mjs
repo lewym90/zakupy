@@ -103,6 +103,7 @@ eq(effectiveModel('gemini-2.5-flash'), DEFAULT_MODEL, 'wycofany model => domyśl
   eq(cg([bl, ok], '2026-01-01').length, 0, 'niepewna oferta nie tworzy porównania');
   eq(cg([bl, ok, ok2], '2026-01-01')[0].rows.map(r => r.o.id), ['k', 'l'], 'niepewna poza „najtaniej”: wygrywa potwierdzone 3,50 zł/l');
   eq(isSure({}), true, 'własna oferta bez znacznika jest pewna');
+  eq(cg([{ ...ok, conf: 'cena' }, ok2], '2026-01-01').length, 0, 'pewna cena bez przeliczenia nie wchodzi do porównania');
   eq(promoLabel({ ...ok2, promo: 'Dwusztuk' }, zl), 'Dwusztuk', 'napis jak w sklepie');
   eq(flyerUrl({ store: 'Lidl', section: 'gazetka-02-11-pon-kw45', page: 10 }), 'https://www.lidl.pl/l/pl/gazetki/gazetka-02-11-pon-kw45/view/flyer/page/10', 'link do strony gazetki');
   eq(flyerUrl({ store: 'Kaufland', section: 'Napoje' }), '', 'bez linku poza gazetką');
