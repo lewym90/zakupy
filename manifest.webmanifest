@@ -1,0 +1,16 @@
+{
+  "name": "Zakupy",
+  "short_name": "Zakupy",
+  "description": "Paragony, własny cennik, budżet i okazje w jednym miejscu.",
+  "lang": "pl",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#F2F5F1",
+  "theme_color": "#F2F5F1",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
