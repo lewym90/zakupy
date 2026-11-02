@@ -6,7 +6,7 @@ import re
 
 import gemini
 from gemini import Reader
-from normalize import make_offer, money, parse_base_price, parse_pack, verify
+from normalize import apply_multibuy, make_offer, money, parse_base_price, parse_multibuy, parse_pack, verify, verify_any
 
 LIST_URL = 'https://www.lidl.pl/c/nasze-gazetki/s10008614'
 API = 'https://endpoints.leaflets.schwarz/v4/flyer?flyer_identifier={slug}&region_id=0&region_code=0'
@@ -14,8 +14,8 @@ API = 'https://endpoints.leaflets.schwarz/v4/flyer?flyer_identifier={slug}&regio
 DEFAULT_ONLY = r'^gazetka(?!.*katalog)'
 
 PROMPT = """Odczytaj ze zdjęcia strony gazetki Lidl WSZYSTKIE oferty spożywcze i drogeryjne. Zwróć wyłącznie JSON:
-{"oferty":[{"nazwa":string,"marka":string|null,"opakowanie":string|null,"cena":number,"cena_przed":number|null,"cena_jednostkowa":string|null,"komplet_ilosc":number|null,"komplet_cena":number|null,"kolejna_taniej_proc":number|null,"warunek":string|null}]}
-Zasady: przepisuj tylko to, co jest WYDRUKOWANE; nie zgaduj i nie licz. "cena" = cena promocyjna jednego opakowania w zł (liczba z kropką). "opakowanie" = gramatura lub pojemność dokładnie jak na stronie (np. "2 x 1,5 l", "500 g"). "cena_jednostkowa" = tekst ceny za kg/l/szt jak wydrukowano (np. "1 kg = 9,98"). Gdy jest promocja "N za X zł" wpisz komplet_ilosc=N i komplet_cena=X. Gdy "drugi/trzeci produkt X% taniej" wpisz kolejna_taniej_proc=X. "warunek" = np. "z aplikacją Lidl Plus", "limit 6 szt.". Pomiń ceny rabatu bez nazwy produktu, artykuły nie-spożywcze i nie-drogeryjne oraz reklamy. Gdy na stronie nie ma ofert zwróć {"oferty":[]}."""
+{"oferty":[{"nazwa":string,"marka":string|null,"opakowanie":string|null,"cena":number,"cena_przed":number|null,"cena_jednostkowa":string|null,"komplet_ilosc":number|null,"komplet_platnych":number|null,"komplet_cena":number|null,"kolejna_taniej_proc":number|null,"promocja":string|null,"warunek":string|null}]}
+Zasady: przepisuj tylko to, co jest WYDRUKOWANE; nie zgaduj i nie licz. "cena" = cena promocyjna jednego opakowania w zł (liczba z kropką). "opakowanie" = gramatura lub pojemność dokładnie jak na stronie (np. "2 x 1,5 l", "500 g"). "cena_jednostkowa" = tekst ceny za kg/l/szt jak wydrukowano (np. "1 kg = 9,98"). Promocje wielosztukowe: "N za X zł" -> komplet_ilosc=N, komplet_cena=X; "3 w cenie 2" / "3 za 2" / "2+1 gratis" / "kup 2, trzecia gratis" -> komplet_ilosc=3 (ile sztuk dostajesz), komplet_platnych=2 (za ile płacisz), a "cena" to cena JEDNEJ sztuki. "promocja" = napis promocji dokładnie jak wydrukowano (np. "3 za 2", "2+1 gratis"), albo null. Gdy "drugi/trzeci produkt X% taniej" wpisz kolejna_taniej_proc=X. "warunek" = np. "z aplikacją Lidl Plus", "limit 6 szt.". Pomiń ceny rabatu bez nazwy produktu, artykuły nie-spożywcze i nie-drogeryjne oraz reklamy. Gdy na stronie nie ma ofert zwróć {"oferty":[]}."""
 
 
 def list_flyers(page, only=DEFAULT_ONLY):
@@ -45,28 +45,43 @@ def map_item(it, valid_from, valid_to, section=''):
         return None
     pack = parse_pack(it.get('opakowanie') or '') or parse_pack(name)
     note = ''
-    mode, need, pct = 'unit', 1, 0
     cond = (it.get('warunek') or '').strip()
-    kn, kc = it.get('komplet_ilosc'), money(it.get('komplet_cena'))
-    if isinstance(kn, (int, float)) and kn >= 2 and kc:
-        mode, need, price = 'bundle', int(kn), kc
+    kn, kp, kc = it.get('komplet_ilosc'), it.get('komplet_platnych'), money(it.get('komplet_cena'))
+    mb = None
+    if isinstance(kn, (int, float)) and kn >= 2 and isinstance(kp, (int, float)) and 1 <= kp < kn:
+        mb = {'need': int(kn), 'pay': int(kp)}
+    elif isinstance(kn, (int, float)) and kn >= 2 and kc:
+        mb = {'need': int(kn), 'total': kc}
     elif isinstance(it.get('kolejna_taniej_proc'), (int, float)) and 0 < it['kolejna_taniej_proc'] <= 100:
-        mode, need, pct = 'nth', 2, float(it['kolejna_taniej_proc'])
+        mb = {'need': 2, 'pct': float(it['kolejna_taniej_proc'])}
+    else:
+        mb = parse_multibuy(it.get('promocja') or '')
     if not pack:
         pack = dict(amount=1.0, unit='szt', conf='check', note='')
     raw = (it.get('cena_jednostkowa') or '').lower().replace('zł', '').replace('pln', '').strip()
     raw = re.sub(r'^(\d+(?:[.,]\d+)?)?\s*(kg|g|ml|l|szt)\.?\s*=\s*', lambda m: f"{m.group(1) or 1} {m.group(2)} ", raw)
-    if mode != 'unit':
-        conf, note = 'check', 'promocja wielosztukowa: sprawdź w gazetce'
+    old = money(it.get('cena_przed')) or 0
+    if mb:
+        # możliwe ceny jednej sztuki: zwykła (cena) albo promocyjna; wystarczy, że jedna zgadza się z ceną jednostkową ze strony
+        cands = [price]
+        if 'total' in mb:
+            cands.append(round(mb['total'] / mb['need']))
+        if 'pay' in mb:
+            cands.append(round(price * mb['pay'] / mb['need']))
+        if 'pct' in mb:
+            cands.append(round(price * (1 - mb['pct'] / 100)))
+        conf, note = verify_any(cands, pack, raw)
     elif not parse_base_price(raw):
         conf, note = 'check', 'brak ceny jednostkowej, by potwierdzić odczyt'
     else:
         conf, note = verify(price, pack, raw)
-    old = money(it.get('cena_przed')) or 0
-    o = make_offer('Lidl', name, pack, price, old if old > price else 0, valid_from, valid_to, cond=cond, section=section, src='leaflet',
+    o = make_offer('Lidl', name, pack, price, old if old > price and not mb else 0, valid_from, valid_to, cond=cond, section=section, src='leaflet',
                    conf=conf, note=note, brand=(it.get('marka') or '').strip())
-    o['mode'], o['need'], o['pct'] = mode, need, pct
+    if mb:
+        apply_multibuy(o, mb, price)
+        o['promo'] = (it.get('promocja') or '').strip()[:40]
     return o
+
 
 
 def _batch_prompt():
@@ -74,7 +89,7 @@ def _batch_prompt():
     return ('Odczytaj ze zdjęć kolejnych stron gazetki Lidl (obrazy są w kolejności 1, 2, 3...) WSZYSTKIE oferty spożywcze i drogeryjne. Zwróć wyłącznie JSON:\n'
             '{"strony":[{"numer":1,"oferty":[...]},{"numer":2,"oferty":[...]}]}\n'
             'gdzie "numer" to kolejność obrazu w tej wiadomości, a każda oferta ma pola:\n'
-            '{"nazwa":string,"marka":string|null,"opakowanie":string|null,"cena":number,"cena_przed":number|null,"cena_jednostkowa":string|null,"komplet_ilosc":number|null,"komplet_cena":number|null,"kolejna_taniej_proc":number|null,"warunek":string|null}\n'
+            '{"nazwa":string,"marka":string|null,"opakowanie":string|null,"cena":number,"cena_przed":number|null,"cena_jednostkowa":string|null,"komplet_ilosc":number|null,"komplet_platnych":number|null,"komplet_cena":number|null,"kolejna_taniej_proc":number|null,"promocja":string|null,"warunek":string|null}\n'
             + rules)
 
 
@@ -95,7 +110,7 @@ def collect(page, ctx, key, cache_dir, max_pages=140, only=DEFAULT_ONLY, log=pri
             img = p.get('image')
             if not img:
                 continue
-            ck = os.path.join(cache_dir, hashlib.sha1((slug + '|' + img).encode()).hexdigest() + '.json')
+            ck = os.path.join(cache_dir, hashlib.sha1((slug + '|' + img + '|v2').encode()).hexdigest() + '.json')
             if os.path.exists(ck):
                 with open(ck, encoding='utf-8') as f:
                     items_by_page[p.get('number')] = json.load(f)
@@ -143,5 +158,6 @@ def collect(page, ctx, key, cache_dir, max_pages=140, only=DEFAULT_ONLY, log=pri
             for it in items_by_page[num]:
                 o = map_item(it, vf or vt, vt, section=slug)
                 if o:
+                    o['page'] = num
                     offers.append(o)
     return offers, warns

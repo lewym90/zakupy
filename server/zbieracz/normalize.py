@@ -128,3 +128,63 @@ def make_offer(store, name, pack, price, old, valid_from, valid_to, cond='', sec
         'amount': round(pack['amount'], 4), 'unit': pack['unit'], 'mode': 'unit', 'need': 1, 'pct': 0,
         'from': valid_from, 'until': valid_to, 'cond': cond, 'section': section, 'src': src, 'conf': conf, 'note': note,
     }
+
+
+_N = r'(\d{1,2})'
+_MB_PAY = re.compile(r'\b' + _N + r'\s*(?:w\s+cenie|za)\s*' + _N + r'\b(?![.,]\d|\s*(?:zł|zl|pln))', re.I)          # 3 w cenie 2, 3 za 2
+_MB_PLUS = re.compile(r'\b' + _N + r'\s*\+\s*' + _N + r'\s*(?:gratis\w*|gratis)', re.I)                              # 2+1 gratis
+_MB_PLUS_BARE = re.compile(r'(?<![\d.,])([1-9])\s*\+\s*([1-9])(?![\d.,]|\s*(?:g|kg|ml|l|szt|dag)\b)', re.I)             # 2+1
+_MB_TOTAL = re.compile(r'\b' + _N + r'\s*za\s*(\d+(?:[.,]\d{1,2})?)\s*(?:zł|zl|pln)', re.I)                          # 3 za 9,99 zł
+_MB_NTH = [
+    re.compile(r'(?:drugi|kolejny|2\.)\s*(?:produkt|artyku\w*|szt\w*)?\s*(?:o\s*)?-?\s*(\d{1,3})\s*%', re.I),
+    re.compile(r'-?\s*(\d{1,3})\s*%\s*(?:taniej\s*)?(?:na|przy zakupie)\s*(?:drugi|kolejny|2\.)', re.I),
+]
+
+
+def parse_multibuy(text):
+    """Tekst promocji -> {'need','pay'} | {'need','total'} | {'need':2,'pct'} albo None. Obsługuje: 3 za 2, 3 w cenie 2, 2+1 gratis,
+    3 za 9,99 zł, drugi produkt -50% / drugi gratis."""
+    t = (text or '').replace('\u00a0', ' ')
+    m = _MB_TOTAL.search(t)
+    if m and int(m.group(1)) >= 2:
+        return {'need': int(m.group(1)), 'total': money(m.group(2))}
+    m = _MB_PAY.search(t)
+    if m and int(m.group(1)) >= 2 and 1 <= int(m.group(2)) < int(m.group(1)):
+        return {'need': int(m.group(1)), 'pay': int(m.group(2))}
+    m = _MB_PLUS.search(t) or _MB_PLUS_BARE.search(t)
+    if m:
+        a, b = int(m.group(1)), int(m.group(2))
+        return {'need': a + b, 'pay': a}
+    for rx in _MB_NTH:
+        m = rx.search(t)
+        if m and 0 < int(m.group(1)) <= 100:
+            return {'need': 2, 'pct': float(m.group(1))}
+    if re.search(r'(?:drugi|kolejny)\s+(?:produkt\s+|artyku\w*\s+)?gratis', t, re.I):
+        return {'need': 2, 'pct': 100.0}
+    return None
+
+
+def apply_multibuy(o, mb, single_price):
+    """Nakłada promocję wielosztukową na ofertę. single_price = cena jednej sztuki (grosze), o ile znana."""
+    if not mb:
+        return o
+    if 'pay' in mb and single_price:
+        o['mode'], o['need'], o['pay'], o['price'] = 'bundle', mb['need'], mb['pay'], single_price * mb['pay']
+    elif 'total' in mb and mb['total']:
+        o['mode'], o['need'], o['price'] = 'bundle', mb['need'], mb['total']
+    elif 'pct' in mb and single_price:
+        o['mode'], o['need'], o['pct'], o['price'] = 'nth', mb['need'], mb['pct'], single_price
+    return o
+
+
+def verify_any(prices, pack, base_text):
+    """Jak verify, ale wystarczy, że zgodna jest którakolwiek z możliwych cen jednej sztuki (zwykła albo promocyjna)."""
+    last = ('check', 'brak ceny jednostkowej, by potwierdzić odczyt')
+    for pr in prices:
+        if not pr:
+            continue
+        r = verify(pr, pack, base_text)
+        if r[0] == 'ok':
+            return r if base_text and parse_base_price(base_text) else ('check', 'brak ceny jednostkowej, by potwierdzić odczyt')
+        last = r
+    return last

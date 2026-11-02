@@ -109,7 +109,7 @@ try:
     until = (_dt.date.today() + _dt.timedelta(days=3)).isoformat()
     mk = lambda i, st, n, pr, am, conf: {'id': i, 'store': st, 'name': n, 'brand': '', 'price': pr, 'old': 0, 'amount': am, 'unit': 'g', 'mode': 'unit', 'need': 1, 'pct': 0, 'from': '', 'until': until, 'cond': '', 'section': '', 'src': 'html', 'conf': conf, 'note': 'cena jednostkowa nie zgadza się' if conf == 'check' else ''}
     feed = {'v': 1, 'updated': _dt.datetime.now().isoformat(), 'stores': {'Kaufland': {'ok': True, 'count': 1}, 'Lidl': {'ok': False, 'msg': 'Brak klucza Gemini'}},
-            'offers': [mk('k1', 'Kaufland', 'Masło ekstra Łaciate', 649, 200, 'ok'), mk('l1', 'Lidl', 'Masło polskie', 599, 200, 'check')]}
+            'offers': [mk('k1', 'Kaufland', 'Masło ekstra Łaciate', 649, 200, 'ok'), mk('l1', 'Lidl', 'Masło polskie', 599, 200, 'check'), dict(mk('l2', 'Lidl', 'Pepsi napój gazowany', 1498, 2000, 'ml'), mode='bundle', need=3, pay=2, page=14)]}
     pg.route('**/oferty-test.json', lambda r: r.fulfill(status=200, content_type='application/json', headers={'access-control-allow-origin': '*'}, body=json.dumps(feed)))
     pg.click('[data-tab="ustawienia"]'); pg.fill('#surl', 'http://localhost:8765/oferty-test.json'); pg.click('[data-act="savesrv"]')
     pg.wait_for_function("document.getElementById('view').innerText.includes('Brak klucza Gemini')", timeout=5000)
@@ -120,7 +120,13 @@ try:
     check(pg.eval_on_selector('#oq', 'e => e === document.activeElement'), 'serwer: pole szukania zachowuje fokus podczas pisania')
     pg.fill('#oq', ''); pg.click('[data-act="omode"][data-m="porownanie"]'); pg.wait_for_timeout(100)
     t = pg.inner_text('#view'); check('Masło' in t and 'najtaniej: Lidl' in t, 'serwer: porównanie masła Kaufland vs Lidl')
-    pg.click('[data-act="omode"][data-m="lista"]'); pg.click('[data-act="offer"][data-id="s:k1"]'); pg.wait_for_selector('.sheet')
+    pg.click('[data-act="omode"][data-m="lista"]')
+    pg.fill('#oq', 'pepsi'); pg.wait_for_timeout(150); t = pg.inner_text('#view')
+    check('3 za 2' in t and 'gazetka Lidl, str. 14' in t and '14,98' in t and 'Komplet' in t and '2,50' in t, 'promocja "3 za 2": oznaczenie, miejsce w gazetce, cena kompletu, 2,50 zł za litr')
+    pg.fill('#oq', ''); pg.click('[data-act="ocat"][data-c="__multi"]'); pg.wait_for_timeout(100)
+    check('Pepsi' in pg.inner_text('#view') and 'Masło' not in pg.inner_text('#view'), 'filtr: tylko komplety i 2+1')
+    pg.click('[data-act="ocat"][data-c=""]')
+    pg.click('[data-act="offer"][data-id="s:k1"]'); pg.wait_for_selector('.sheet')
     check('nie można jej edytować' in pg.inner_text('.sheet') and pg.query_selector('.sheet #o-name') is None, 'serwer: oferta tylko do odczytu')
     pg.screenshot(path=f'{OUT}/09c-oferta-serwer.png'); pg.click('[data-close]')
     pg.reload(); pg.wait_for_selector('.tab'); pg.click('[data-tab="okazje"]'); check('Masło polskie' in pg.inner_text('#view'), 'serwer: oferty zostają po przeładowaniu (pamięć telefonu)')

@@ -3,7 +3,7 @@ Nie omijamy żadnych zabezpieczeń: jeśli strona pokaże wyzwanie/blokadę, ko�
 import datetime as dt
 import re
 
-from normalize import make_offer, money, parse_pack, parse_valid, verify
+from normalize import apply_multibuy, make_offer, money, parse_multibuy, parse_pack, parse_valid, verify
 
 URL_CURRENT = 'https://sklep.kaufland.pl/oferta/przeglad.html?kloffer-week=current'
 URL_NEXT = 'https://sklep.kaufland.pl/oferta/przeglad.html?kloffer-week=next'
@@ -20,7 +20,7 @@ EXTRACT_JS = r"""
     if (e.classList && e.classList.contains('k-product-tile')) {
       rows.push([sec, valid, tx(e, '.k-product-tile__title'), tx(e, '.k-product-tile__subtitle'), tx(e, '.k-product-tile__unit-price'),
         tx(e, '.k-product-tile__base-price'), tx(e, '.k-price-tag__discount'), tx(e, '.k-price-tag__price'),
-        tx(e, '.k-price-tag__old-price-line-through'), /Cena z kart/i.test(e.textContent) ? 1 : 0]);
+        tx(e, '.k-price-tag__old-price-line-through'), /Cena z kart/i.test(e.textContent) ? 1 : 0, e.textContent.replace(/\s+/g, ' ').trim().slice(0, 400)]);
     } else if (e.children.length === 0 && !e.closest('.k-product-tile')) {
       const s = e.textContent.trim();
       if (/^Oferta ważna/.test(s)) { valid = s; sec = prevLeaf; }
@@ -36,7 +36,9 @@ def parse_rows(rows, today=None):
     """Wiersze ze strony -> (oferty, ostrzeżenia). Czysta funkcja, testowana bez przeglądarki."""
     today = today or dt.date.today()
     offers, warns, seen = [], [], set()
-    for sec, valid, brand, sub, pack_t, base_t, disc, price_t, old_t, card in rows:
+    for row in rows:
+        sec, valid, brand, sub, pack_t, base_t, disc, price_t, old_t, card = row[:10]
+        full = row[10] if len(row) > 10 else ''
         sec = re.sub(r'\s*\d{2}\.\d{2}\.\d{4}.*$', '', sec or '').strip()
         if SKIP_SECTIONS.search(sec):
             continue
@@ -57,8 +59,15 @@ def parse_rows(rows, today=None):
         conf, note = verify(price, pack, base_t)
         if not pack:
             pack = dict(amount=1.0, unit='szt', conf='check', note='')
-        offers.append(make_offer('Kaufland', name, pack, price, old if old and old > price else 0, vf, vt,
-                                 cond='z kartą Kaufland Card XTRA' if card else '', section=sec, conf=conf, note=note, brand=brand))
+        o = make_offer('Kaufland', name, pack, price, old if old and old > price else 0, vf, vt,
+                       cond='z kartą Kaufland Card XTRA' if card else '', section=sec, conf=conf, note=note, brand=brand)
+        mb = parse_multibuy(' | '.join([disc, pack_t, sub, brand, full]))
+        if mb:
+            apply_multibuy(o, mb, price)
+            o['promo'] = disc or ''
+            o['conf'], o['note'] = 'check', 'promocja wielosztukowa wykryta w opisie oferty: potwierdź warunki i cenę na stronie sklepu'
+            o['old'] = 0
+        offers.append(o)
     return offers, warns
 
 

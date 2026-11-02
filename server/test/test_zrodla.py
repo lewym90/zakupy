@@ -76,7 +76,7 @@ class Lidl(unittest.TestCase):
         self.assertIsNone(offers[4])
         par, cola, ser, jog = offers[:4]
         self.assertEqual((par['name'], par['price'], par['old'], par['conf']), ('Pikok Parówki z szynki', 699, 999, 'ok'))
-        self.assertEqual((cola['mode'], cola['need'], cola['price'], cola['amount'], cola['unit'], cola['conf']), ('bundle', 3, 999, 1.5, 'l', 'check'))
+        self.assertEqual((cola['mode'], cola['need'], cola['price'], cola['amount'], cola['unit'], cola['conf']), ('bundle', 3, 999, 1.5, 'l', 'ok'))
         self.assertEqual(ser['conf'], 'check'); self.assertIn('wg sklepu', ser['note'])
         self.assertEqual((jog['mode'], jog['pct'], jog['need'], jog['conf']), ('nth', 50.0, 2, 'check'))
 
@@ -131,6 +131,38 @@ class Lidl(unittest.TestCase):
         self.assertTrue(all(o['store'] == 'Lidl' and o['until'] == '2026-11-04' for o in offers))
         srv.shutdown()
 
+
+
+class Promocje(unittest.TestCase):
+    def test_parse_multibuy(self):
+        from normalize import parse_multibuy as pm
+        self.assertEqual(pm('3 w cenie 2'), {'need': 3, 'pay': 2})
+        self.assertEqual(pm('Promocja 3 za 2'), {'need': 3, 'pay': 2})
+        self.assertEqual(pm('2+1 gratis'), {'need': 3, 'pay': 2})
+        self.assertEqual(pm('kup 2 + 1 gratis'), {'need': 3, 'pay': 2})
+        self.assertEqual(pm('3 za 9,99 zł'), {'need': 3, 'total': 999})
+        self.assertEqual(pm('drugi produkt -50%'), {'need': 2, 'pct': 50.0})
+        self.assertEqual(pm('-30% na drugi produkt'), {'need': 2, 'pct': 30.0})
+        self.assertEqual(pm('drugi gratis'), {'need': 2, 'pct': 100.0})
+        for nic in ['400 g + 50 g', '2 x 2 l opakowanie', '-37%', '1 kg za 9,99 zł', 'tylko', '']:
+            self.assertIsNone(pm(nic), nic)
+
+    def test_lidl_trzy_w_cenie_dwoch(self):
+        import lidl
+        it = {'nazwa': 'Coca-Cola', 'marka': None, 'opakowanie': '2 l', 'cena': 7.49, 'cena_przed': None, 'cena_jednostkowa': '1 l = 3,75', 'komplet_ilosc': 3, 'komplet_platnych': 2, 'komplet_cena': None, 'kolejna_taniej_proc': None, 'promocja': '3 za 2', 'warunek': None}
+        o = lidl.map_item(it, '2026-11-02', '2026-11-04')
+        self.assertEqual((o['mode'], o['need'], o['pay'], o['price'], o['conf'], o['promo']), ('bundle', 3, 2, 1498, 'ok', '3 za 2'))
+        # tekst promocji bez pól liczbowych też wystarczy
+        it2 = dict(it, komplet_ilosc=None, komplet_platnych=None, promocja='2+1 gratis')
+        o2 = lidl.map_item(it2, '2026-11-02', '2026-11-04')
+        self.assertEqual((o2['mode'], o2['need'], o2['pay']), ('bundle', 3, 2))
+
+    def test_kaufland_wykrywa_promocje(self):
+        import kaufland
+        row = ['Napoje', 'Oferta ważna od 29.10. do 04.11.', 'Pepsi', 'Napój gazowany', '2 l opakowanie', '(=1 l 3,75)', '3 za 2', '7,49', '', 0, 'Pepsi Napój gazowany 2 l (=1 l 3,75) 3 za 2 7,49']
+        offers, _ = kaufland.parse_rows([row], dt.date(2026, 11, 2))
+        o = offers[0]
+        self.assertEqual((o['mode'], o['need'], o['pay'], o['price'], o['conf']), ('bundle', 3, 2, 1498, 'check'))
 
 
 class Czas(unittest.TestCase):

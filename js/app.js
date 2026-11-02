@@ -3,9 +3,9 @@ import { CATS, catOf, catById, STORES } from './cats.js';
 import { esc, zl, zlShort, parseMoney, parseNum, centsToInput, norm, uid, todayISO, ymOf, monthName, monthShort, addMonth, daysInMonth, fmtDate } from './util.js';
 import { products, matchProduct, verdict, monthStats, monthTotals, receiptTotal, lineSum } from './calc.js';
 import { readReceipt, DEFAULT_MODEL, effectiveModel, listModels, pickFlash } from './gemini.js';
-import { offerCalc, compareGroups, familyOf, offerLabel, UNITS, packLabel, unitPrice } from './offers.js';
+import { offerCalc, compareGroups, familyOf, offerLabel, UNITS, packLabel, unitPrice, promoLabel, whereLabel, isMulti } from './offers.js';
 
-const VERSION = '0.3.1';
+const VERSION = '0.3.2';
 const NOW_YM = () => todayISO().slice(0, 7);
 const S = { receipts: [], offers: [], kv: {}, tab: 'start', omode: 'lista', ym: NOW_YM(), q: '', cat: '', ocat: '', lastStore: 'Biedronka', srv: null, oq: '' };
 const view = document.getElementById('view');
@@ -158,13 +158,16 @@ async function fetchSrv(manual) {
 }
 const UNIT_LBL = { l: 'l', kg: 'kg', szt: 'szt' };
 
+const promoPill = o => { const t = promoLabel(o, zl); return t ? `<span class="pill promo">🏷️ ${esc(t)}</span>` : ''; };
+const whereLine = o => { const w = whereLabel(o); return w ? `<span class="hint">Szukaj: ${esc(w)}</span>` : ''; };
 function offerCard(o, v) {
-  const c = offerCalc(o), u = unitPrice(o), bundle = c.need > 1 && o.mode !== 'unit';
+  const c = offerCalc(o), u = unitPrice(o), multi = isMulti(o);
   return `<button class="offer" data-act="offer" data-id="${o.id}"><span class="em">${catById(o.cat).e}</span>
     <span class="mid"><span class="t">${esc(o.name)}</span><span class="hint">${esc(o.store)} · do ${fmtDate(o.until)}${o.cond ? ' · ' + esc(o.cond) : ''}</span>
-      <span class="hint">${bundle ? 'Komplet' : 'Opakowanie'}: <b>${esc(packLabel(o))}</b></span>
-      <span class="uprice">Za ${esc(u.label)}: <b>${zl(u.price)}</b></span>${v ? `<span class="pill ${v.t}">${esc(v.txt)}</span>` : ''}${o.conf === 'check' ? '<span class="pill nodata">odczyt do sprawdzenia</span>' : ''}</span>
-    <span class="p num"><b>${zl(c.total)}</b><small>${bundle ? 'za komplet' : 'za opakowanie'}</small>${o.old ? `<s>${zl(o.old)}</s>` : ''}</span></button>`;
+      ${promoPill(o)}
+      <span class="hint">${multi ? 'Komplet' : 'Opakowanie'}: <b>${esc(packLabel(o))}</b></span>
+      <span class="uprice">Za ${esc(u.label)}: <b>${zl(u.price)}</b></span>${whereLine(o)}${v ? `<span class="pill ${v.t}">${esc(v.txt)}</span>` : ''}${o.conf === 'check' ? '<span class="pill nodata">odczyt do sprawdzenia</span>' : ''}</span>
+    <span class="p num"><b>${zl(c.total)}</b><small>${multi ? 'za komplet' : 'za opakowanie'}</small>${o.old ? `<s>${zl(o.old)}</s>` : ''}</span></button>`;
 }
 
 function okazje() {
@@ -176,19 +179,23 @@ function okazje() {
     const groups = compareGroups(every, today);
     body = groups.length ? '<div class="cmpgrid">' + groups.map(g => {
       const b = g.best;
-      const rows = g.rows.map(r => `<button class="cmp-row ${r.rank === 1 ? 'best' : ''}" data-act="offer" data-id="${r.o.id}">
+      const rows = g.rows.map(r => { const u = unitPrice(r.o, g.per), multi = isMulti(r.o);
+        return `<button class="cmp-row ${r.rank === 1 ? 'best' : ''}" data-act="offer" data-id="${r.o.id}">
         <span class="rk">${r.rank}</span>
-        <span class="mid"><span class="t">${esc(r.o.store)}</span><span class="hint">${esc(r.o.name)}</span><span class="hint">${esc(packLabel(r.o))} za ${zl(r.c.total)}</span></span>
-        <span class="p num"><b>${zl(unitPrice(r.o, g.per).price)}</b><small>za ${esc(unitPrice(r.o, g.per).label)}${r.rank > 1 ? ' · +' + Math.round(r.over * 100) + '%' : ''}</small></span></button>`).join('');
+        <span class="mid"><span class="t">${esc(r.o.store)}</span><span class="hint">${esc(r.o.name)}</span>${promoPill(r.o)}
+          <span class="hint">${multi ? 'Komplet' : 'Opakowanie'}: <b>${esc(packLabel(r.o))}</b></span>
+          <span class="uprice">Za ${esc(u.label)}: <b>${zl(u.price)}</b>${r.rank > 1 ? ` <em>+${Math.round(r.over * 100)}%</em>` : ' <em class="bestt">najtaniej</em>'}</span>${whereLine(r.o)}${r.o.conf === 'check' ? '<span class="pill nodata">odczyt do sprawdzenia</span>' : ''}</span>
+        <span class="p num"><b>${zl(r.c.total)}</b><small>${multi ? 'za komplet' : 'za opakowanie'}</small></span></button>`; }).join('');
       return `<div class="card cmp"><div class="cmp-h"><b>${esc(g.fam.n)}</b><span class="hint">najtaniej: ${esc(b.o.store)}, ${zl(unitPrice(b.o, g.per).price)} za ${esc(unitPrice(b.o, g.per).label)}</span></div>${rows}</div>`;
     }).join('') + '</div><p class="hint" style="text-align:center">Porównuję ten sam rodzaj produktu po cenie za litr, kilogram lub sztukę. Marki mogą się różnić, więc sprawdź, czy to naprawdę to, czego szukasz.</p>'
       : `<div class="empty"><div class="big">⚖️</div><b>Na razie nie ma czego porównać</b><p>Porównanie pojawi się, gdy dodasz dwie aktywne okazje na podobny produkt (np. cola w Lidlu i w Kauflandzie).</p><button class="btn" data-act="newoffer">Dodaj okazję</button></div>`;
   } else {
     const used = [...new Set(act.map(o => o.cat))];
     const q = normQ(S.oq).trim();
-    const list = act.filter(o => (!S.ocat || o.cat === S.ocat) && (!q || normQ(o.store + ' ' + o.name).includes(q))).map(o => ({ o, v: offerVerdict(o) }));
-    list.sort((a, b) => RANK[a.v.t] - RANK[b.v.t] || a.o.name.localeCompare(b.o.name, 'pl'));
-    const chips = `<div class="chips"><button class="chip" aria-pressed="${!S.ocat}" data-act="ocat" data-c="">Wszystko</button>${CATS.filter(c => used.includes(c.id)).map(c => `<button class="chip" aria-pressed="${S.ocat === c.id}" data-act="ocat" data-c="${c.id}">${c.e} ${c.n}</button>`).join('')}</div>`;
+    const list = act.filter(o => (!S.ocat || (S.ocat === '__multi' ? isMulti(o) : o.cat === S.ocat)) && (!q || normQ(o.store + ' ' + o.name).includes(q))).map(o => ({ o, v: offerVerdict(o) }));
+    list.sort((a, b) => RANK[a.v.t] - RANK[b.v.t] || (isMulti(b.o) - isMulti(a.o)) || a.o.name.localeCompare(b.o.name, 'pl'));
+    const nMulti = act.filter(isMulti).length;
+    const chips = `<div class="chips"><button class="chip" aria-pressed="${!S.ocat}" data-act="ocat" data-c="">Wszystko</button>${nMulti ? `<button class="chip" aria-pressed="${S.ocat === '__multi'}" data-act="ocat" data-c="__multi">🏷️ Komplety i 2+1 (${nMulti})</button>` : ''}${CATS.filter(c => used.includes(c.id)).map(c => `<button class="chip" aria-pressed="${S.ocat === c.id}" data-act="ocat" data-c="${c.id}">${c.e} ${c.n}</button>`).join('')}</div>`;
     body = (act.length ? `<input class="search" id="oq" type="search" placeholder="Szukaj okazji, np. masło" value="${esc(S.oq)}" autocomplete="off">` + chips : '') + (list.length ? `<div class="list grid">${list.map(({ o, v }) => offerCard(o, v)).join('')}</div>` : `<div class="empty"><div class="big">⚡</div><b>${act.length ? 'Nic nie pasuje' : 'Brak aktywnych okazji'}</b><p>${act.length ? 'Zmień wyszukiwanie lub kategorię.' : 'Dodaj promocję ręcznie albo podłącz serwer z ofertami w Ustawieniach.'}</p>${act.length ? '' : '<button class="btn" data-act="newoffer">Dodaj okazję</button>'}</div>`);
   }
   return `<div class="head"><div><h1>Okazje</h1><p class="sub">${S.omode === 'porownanie' ? 'Która oferta wychodzi taniej' : 'Oceniane względem Waszych cen'}</p></div><button class="btn sm" data-act="newoffer">Dodaj</button></div>
@@ -476,12 +483,14 @@ function openProduct(key) {
 function openSrvOffer(o) {
   const c = offerCalc(o), v = offerVerdict(o);
   const el = sheet('Oferta ' + o.store, `<h2 style="margin-top:0">${esc(o.name)}</h2>
+    ${promoPill(o) ? `<p style="margin:0 0 8px">${promoPill(o)}</p>` : ''}
     <div class="kv"><span>Cena ${c.need > 1 && o.mode !== 'unit' ? 'kompletu' : 'opakowania'}</span><b>${zl(c.total)}</b></div>
     ${o.old ? `<div class="kv"><span>Cena przed obniżką</span><b>${zl(o.old)}</b></div>` : ''}
     <div class="kv"><span>Zawartość</span><b>${esc(packLabel(o))}</b></div>
     <div class="kv"><span>Za ${esc(unitPrice(o).label)}</span><b>${zl(unitPrice(o).price)}</b></div>
     <div class="kv"><span>Ważna</span><b>${o.from ? fmtDate(o.from) + ' – ' : 'do '}${fmtDate(o.until)}</b></div>
     ${o.cond ? `<div class="kv"><span>Warunek</span><b>${esc(o.cond)}</b></div>` : ''}
+    ${whereLabel(o) ? `<div class="kv"><span>Gdzie szukać</span><b>${esc(whereLabel(o))}</b></div>` : ''}
     ${v ? `<p><span class="pill ${v.t}">${esc(v.txt)}</span></p>` : ''}
     ${o.conf === 'check' ? `<p class="hint">Ten odczyt jest do sprawdzenia${o.note ? ': ' + esc(o.note) : ''}. Porównaj z gazetką w sklepie.</p>` : ''}
     <p class="hint">Oferta pobrana automatycznie z serwera, więc nie można jej edytować.</p>`);

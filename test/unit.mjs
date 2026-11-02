@@ -77,5 +77,21 @@ eq(effectiveModel('gemini-2.5-flash'), DEFAULT_MODEL, 'wycofany model => domyśl
   const g = cg([{ ...o('Ser Gouda Kaufland', 699, 250, 'g'), until: '2999-01-01', store: 'A', id: 'a' }, { ...o('Ser Gouda Biedronka', 1099, 1, 'kg'), until: '2999-01-01', store: 'B', id: 'b' }], '2026-01-01')[0];
   eq(g.per, '100g', 'porównanie: wspólna jednostka 100 g gdy któraś oferta < 1 kg');
 }
+{
+  const { promoLabel, whereLabel, isMulti, offerCalc: oc, unitPrice: up } = await import('../js/offers.js');
+  const zl = c => (c / 100).toFixed(2).replace('.', ',') + ' zł';
+  const eq = (a, b, m) => { if (JSON.stringify(a) !== JSON.stringify(b)) { bad++; console.log('FAIL', m, JSON.stringify(a), '!=', JSON.stringify(b)); } };
+  const cola = { name: 'Pepsi', price: 1498, amount: 2, unit: 'l', mode: 'bundle', need: 3, pay: 2, pct: 0 };
+  eq(promoLabel(cola, zl), '3 za 2', '3 za 2');
+  eq(oc(cola).total, 1498, '3 za 2: płacisz za 2 sztuki');
+  eq(up(cola).price, 250, '3 za 2: cena za litr = 14,98 / 6 l');
+  eq(promoLabel({ ...cola, pay: undefined, price: 999 }, zl), '3 za 9,99 zł', '3 za 9,99 zł');
+  eq(promoLabel({ name: 'x', price: 500, amount: 1, unit: 'szt', mode: 'nth', need: 2, pct: 50 }, zl), '2. produkt −50%', 'drugi −50%');
+  eq(promoLabel({ name: 'x', price: 500, amount: 1, unit: 'szt', mode: 'nth', need: 2, pct: 100 }, zl), '2. produkt gratis', 'drugi gratis');
+  eq(promoLabel({ name: 'x', price: 500, amount: 1, unit: 'szt', mode: 'unit', need: 1 }, zl), '', 'zwykła cena bez oznaczenia');
+  eq(isMulti(cola), true, 'isMulti');
+  eq(whereLabel({ store: 'Lidl', page: 14 }), 'gazetka Lidl, str. 14', 'gdzie: Lidl');
+  eq(whereLabel({ store: 'Kaufland', section: 'Napoje' }), 'dział „Napoje”', 'gdzie: Kaufland');
+}
 console.log(bad ? bad + ' błędów' : 'unit OK');
 process.exit(bad ? 1 : 0);

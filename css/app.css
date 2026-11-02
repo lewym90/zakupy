@@ -230,3 +230,15 @@ input:focus, select:focus { border-color: var(--green); outline: none; box-shado
 .offer .uprice b { font-weight: 850; color: var(--green); }
 .offer .p s { display: block; color: var(--mut); font-size: 12.5px; font-weight: 600; }
 .offer .mid { text-align: left; }
+
+/* promocje wielosztukowe */
+.pill.promo { background: #FFE08A; color: #4A3500; font-weight: 800; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .pill.promo { background: #6B5410; color: #FFE9A8; } }
+.offer .pill.promo, .cmp-row .pill.promo { display: inline-block; margin: 4px 0 2px; }
+.cmp-row .uprice { display: block; margin-top: 3px; font-size: 14px; }
+.cmp-row .uprice b { font-weight: 850; }
+.cmp-row .uprice em { font-style: normal; color: var(--mut); font-weight: 700; font-size: 12.5px; }
+.cmp-row .uprice em.bestt { color: var(--green); }
+.cmp-row .p b { font-size: 18px; }
+.cmp-row .mid { text-align: left; }
+.cmp-row .t { font-weight: 750; }

@@ -163,3 +163,18 @@ export function unitPrice(o, force) {
   const n = countNoun(o.name);
   return { price: Math.round(c.total / c.qty), label: '1 ' + n[3], per: 'szt' };
 }
+
+// Oznaczenie promocji dokładnie tak, jak w sklepie: "3 za 2", "3 za 9,99 zł", "2. produkt −50%". Brak dla zwykłej ceny.
+export function promoLabel(o, fmtMoney) {
+  const need = Math.max(1, Math.round(o.need || 1));
+  if (o.mode === 'bundle' && need > 1) return o.pay && o.pay < need ? `${need} za ${o.pay}` : `${need} za ${fmtMoney(o.price)}`;
+  if (o.mode === 'nth' && need > 1) return o.pct >= 100 ? `${need}. produkt gratis` : `${need}. produkt −${numFmt(o.pct)}%`;
+  return '';
+}
+// Gdzie szukać oferty w sklepie (promocje wielosztukowe bywają poza zwykłą półką).
+export function whereLabel(o) {
+  if (o.store === 'Lidl') return o.page ? `gazetka Lidl, str. ${o.page}` : 'gazetka Lidl';
+  if (o.section) return `dział „${o.section}”`;
+  return '';
+}
+export const isMulti = o => (o.mode === 'bundle' || o.mode === 'nth') && Math.round(o.need || 1) > 1;
