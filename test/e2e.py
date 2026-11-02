@@ -77,7 +77,7 @@ try:
         pg.fill('.o-need', str(need)); pg.fill('.o-price', price); pg.fill('.o-amount', amount); pg.select_option('.o-unit', unit)
         return pg.inner_text('#prev')
     add_offer('Lidl', 'Coca-Cola', '9,99', 3, '1,5', 'l'); pg.screenshot(path=f'{OUT}/08b-edytor-promocji.png')
-    check('2,22' in pg.inner_text('#prev') and '3,33' in pg.inner_text('#prev'), 'Lidl: 2,22 zł/l i 3,33 zł za butelkę')
+    check('2,22' in pg.inner_text('#prev') and '4,5 l' in pg.inner_text('#prev') and '9,99' in pg.inner_text('#prev'), 'Lidl: komplet 9,99, zawartość 4,5 l, 2,22 zł za 1 l')
     pg.click('[data-oa="save"]'); pg.wait_for_selector('.sheet', state='detached')
     prev = add_offer('Kaufland', 'Coca-Cola', '13,98', 2, '2', 'l')
     check('3,50' in prev and '2. z 2' in prev and 'najtaniej Lidl' in prev, 'Kaufland: 3,50 zł/l, 2. z 2, najtaniej Lidl')

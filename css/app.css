@@ -224,3 +224,9 @@ input:focus, select:focus { border-color: var(--green); outline: none; box-shado
 
 /* wyszukiwarka okazji */
 .search{width:100%;margin:0 0 10px;padding:12px 14px;border-radius:14px;border:1px solid var(--line,rgba(0,0,0,.12));background:var(--card,#fff);color:inherit;font:inherit;-webkit-appearance:none;appearance:none}
+
+/* karta oferty: cena opakowania, zawartość, przeliczenie */
+.offer .uprice { display: block; margin-top: 4px; font-size: 14px; }
+.offer .uprice b { font-weight: 850; color: var(--green); }
+.offer .p s { display: block; color: var(--mut); font-size: 12.5px; font-weight: 600; }
+.offer .mid { text-align: left; }

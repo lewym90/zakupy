@@ -95,6 +95,7 @@ export function compareGroups(offers, today) {
     g.rows.sort((a, b) => a.c.up - b.c.up);
     const best = g.rows[0].c.up;
     g.rows.forEach((r, i) => { r.rank = i + 1; r.over = best > 0 ? (r.c.up - best) / best : 0; });
+    g.per = g.base === 'kg' ? (g.rows.some(r => r.c.qty < 1) ? '100g' : 'kg') : undefined; // jedna jednostka w całej grupie
     g.best = g.rows[0];
     g.stores = new Set(g.rows.map(r => r.o.store)).size;
     g.spread = g.rows[g.rows.length - 1].c.up - best; // różnica między najdroższą a najtańszą (grosze za jednostkę)
@@ -111,4 +112,54 @@ export function offerLabel(o, fmtMoney, fmtNum) {
   if (o.mode === 'bundle' && c.need > 1) return `${c.need} × ${a} ${u} razem za ${fmtMoney(o.price)}`;
   if (o.mode === 'nth' && c.need > 1) return `${c.need} × ${a} ${u}, ostatnie ${o.pct}% taniej`;
   return `${a} ${u} za ${fmtMoney(o.price)}`;
+}
+
+// ---------- Wyświetlanie: cena opakowania, zawartość, przeliczenie ----------
+// Rzeczowniki dla sztuk, rozpoznawane po nazwie: [wzorzec, l.poj., l.mn. (2-4), dopełniacz l.mn. (5+), biernik "za 1 ..."]
+const NOUNS = [
+  ['papier toaletowy|toaletow|recznik papierowy|recznik kuchenny', 'rolka', 'rolki', 'rolek', 'rolkę'],
+  ['papier do pieczenia|folia aluminiowa', 'arkusz', 'arkusze', 'arkuszy', 'arkusz'],
+  ['kapsulk', 'kapsułka', 'kapsułki', 'kapsułek', 'kapsułkę'],
+  ['tabletk', 'tabletka', 'tabletki', 'tabletek', 'tabletkę'],
+  ['saszetk', 'saszetka', 'saszetki', 'saszetek', 'saszetkę'],
+  ['chusteczk', 'chusteczka', 'chusteczki', 'chusteczek', 'chusteczkę'],
+  ['listk', 'listek', 'listki', 'listków', 'listek'],
+  ['wor(ki|ek)|woreczk', 'worek', 'worki', 'worków', 'worek'],
+  ['pieluch', 'pielucha', 'pieluchy', 'pieluch', 'pieluchę'],
+  ['\\bjaj', 'jajko', 'jajka', 'jaj', 'jajko'],
+];
+const NOUN_RE = NOUNS.map(n => ({ re: new RegExp(n[0]), n: n.slice(1) }));
+const DEFAULT_NOUN = ['sztuka', 'sztuki', 'szt.', 'sztukę'];
+export function countNoun(name) { const t = norm(name); const f = NOUN_RE.find(x => x.re.test(t)); return f ? f.n : DEFAULT_NOUN; }
+const numFmt = n => String(Math.round(n * 1000) / 1000).replace('.', ',');
+function plural(n, noun) {
+  const i = Math.round(n);
+  if (Math.abs(n - i) > 1e-9) return noun[2];
+  if (i === 1) return noun[0];
+  const m10 = i % 10, m100 = i % 100;
+  return m10 >= 2 && m10 <= 4 && !(m100 >= 12 && m100 <= 14) ? noun[1] : noun[2];
+}
+// Ilość (w jednostce bazowej kg/l/szt) jako tekst: 300 g, 1,5 kg, 330 ml, 8 rolek.
+export function fmtQty(q, base, name) {
+  if (base === 'kg') return q < 1 ? `${numFmt(q * 1000)} g` : `${numFmt(q)} kg`;
+  if (base === 'l') return q < 1 ? `${numFmt(q * 1000)} ml` : `${numFmt(q)} l`;
+  return `${numFmt(q)} ${plural(q, countNoun(name))}`;
+}
+// Zawartość jednego opakowania lub całej promocyjnej partii, np. "300 g", "8 rolek", "3 × 1,5 l = 4,5 l".
+export function packLabel(o) {
+  const c = offerCalc(o), [, f] = [0, ({ szt: 1, kg: 1, g: 0.001, l: 1, ml: 0.001 })[o.unit] || 1];
+  const one = fmtQty((o.amount > 0 ? o.amount : 1) * f, c.base, o.name);
+  if (c.need > 1 && (o.mode === 'bundle' || o.mode === 'nth')) return `${c.need} × ${one} = ${fmtQty(c.qty, c.base, o.name)}`;
+  return one;
+}
+// Cena jednostkowa do pokazania: kg dla >= 1 kg, 100 g poniżej (lub wymuszone `force` = '100g'|'kg' w porównaniach), litr, rolka/arkusz/sztuka.
+export function unitPrice(o, force) {
+  const c = offerCalc(o);
+  if (c.base === 'kg') {
+    const per = force || (c.qty < 1 ? '100g' : 'kg');
+    return per === '100g' ? { price: Math.round(c.total / c.qty / 10), label: '100 g', per } : { price: Math.round(c.total / c.qty), label: '1 kg', per };
+  }
+  if (c.base === 'l') return { price: Math.round(c.total / c.qty), label: '1 l', per: 'l' };
+  const n = countNoun(o.name);
+  return { price: Math.round(c.total / c.qty), label: '1 ' + n[3], per: 'szt' };
 }

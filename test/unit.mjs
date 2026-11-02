@@ -56,5 +56,26 @@ const ML = [{ name: 'models/gemini-2.5-flash', supportedGenerationMethods: ['gen
 eq(pickFlash(ML), 'gemini-3.8-flash', 'pickFlash: najnowszy zwykły flash z generateContent'); eq(pickFlash([]), null, 'pickFlash: pusta lista');
 eq(effectiveModel('gemini-2.5-flash'), DEFAULT_MODEL, 'wycofany model => domyślny'); eq(effectiveModel(''), DEFAULT_MODEL, 'brak modelu => domyślny'); eq(effectiveModel('gemini-3.9-flash'), 'gemini-3.9-flash', 'własny model zostaje');
 
+{
+  const { packLabel, unitPrice, countNoun } = await import('../js/offers.js');
+  const o = (name, price, amount, unit, mode = 'unit', need = 1, pct = 0) => ({ name, price, amount, unit, mode, need, pct });
+  const eq = (a, b, m) => { if (JSON.stringify(a) !== JSON.stringify(b)) { bad++; console.log('FAIL', m, JSON.stringify(a), '!=', JSON.stringify(b)); } };
+  eq(packLabel(o('Almusso Papier toaletowy', 2299, 40, 'szt')), '40 rolek', 'papier toaletowy: rolki');
+  eq(unitPrice(o('Almusso Papier toaletowy', 2299, 40, 'szt')), { price: 57, label: '1 rolkę', per: 'szt' }, 'cena za rolkę');
+  eq(unitPrice(o('K-Classic Papier do pieczenia', 399, 30, 'szt')).label, '1 arkusz', 'papier do pieczenia: arkusz');
+  eq(packLabel(o('Ser Gouda', 699, 300, 'g')), '300 g', 'zawartość 300 g');
+  eq(unitPrice(o('Ser Gouda', 699, 300, 'g')), { price: 233, label: '100 g', per: '100g' }, 'poniżej 1 kg: za 100 g');
+  eq(unitPrice(o('Kawa mielona', 3299, 1, 'kg')), { price: 3299, label: '1 kg', per: 'kg' }, 'od 1 kg: za kg');
+  eq(unitPrice(o('Kawa mielona', 3299, 1000, 'g')).label, '1 kg', '1000 g to już kilogram');
+  eq(packLabel(o('Coca-Cola', 999, 1.5, 'l', 'bundle', 3)), '3 × 1,5 l = 4,5 l', 'komplet coli');
+  eq(unitPrice(o('Coca-Cola', 999, 1.5, 'l', 'bundle', 3)).price, 222, 'cola za litr');
+  eq(packLabel(o('Kapsułki do zmywarki', 2999, 32, 'szt')), '32 kapsułki', 'odmiana 32 kapsułki');
+  eq(packLabel(o('Papier toaletowy', 1000, 8, 'szt')), '8 rolek', 'odmiana 8 rolek');
+  eq(packLabel(o('Papier toaletowy', 500, 4, 'szt')), '4 rolki', 'odmiana 4 rolki');
+  eq(countNoun('Żelki Haribo')[3], 'sztukę', 'domyślnie sztuka');
+  const { compareGroups: cg } = await import('../js/offers.js');
+  const g = cg([{ ...o('Ser Gouda Kaufland', 699, 250, 'g'), until: '2999-01-01', store: 'A', id: 'a' }, { ...o('Ser Gouda Biedronka', 1099, 1, 'kg'), until: '2999-01-01', store: 'B', id: 'b' }], '2026-01-01')[0];
+  eq(g.per, '100g', 'porównanie: wspólna jednostka 100 g gdy któraś oferta < 1 kg');
+}
 console.log(bad ? bad + ' błędów' : 'unit OK');
 process.exit(bad ? 1 : 0);
