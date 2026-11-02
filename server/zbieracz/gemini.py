@@ -99,7 +99,10 @@ class Reader:
                     j = self._call(image_bytes, prompt)
                 self._last = time.time()
                 txt = ''.join(p.get('text', '') for p in j['candidates'][0]['content']['parts'])
-                return json.loads(txt)
+                res = json.loads(txt)
+                if not isinstance(res, dict):  # np. dosłowne "null": to pusta odpowiedź, nie wynik
+                    raise ValueError('odpowiedź nie jest obiektem JSON: ' + txt[:200])
+                return res
             except GeminiError as e:
                 if e.status == 429 and re.search(r'PerDay|per day|daily', str(e), re.I):
                     nxt = self._next_model()
@@ -112,7 +115,7 @@ class Reader:
                     time.sleep(65 if e.status == 429 else 25 * (attempt + 1))
                     continue
                 raise
-            except (KeyError, IndexError, ValueError):
+            except (KeyError, IndexError, ValueError) as e:
                 if attempt < 1:
                     continue
-                raise GeminiError(0, 'Odpowiedź modelu nie jest poprawnym JSON-em.')
+                raise GeminiError(0, f'Odpowiedź modelu {self.model} nie jest poprawnym JSON-em: {str(e)[:220]}')

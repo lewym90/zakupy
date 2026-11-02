@@ -169,6 +169,14 @@ class Promocje(unittest.TestCase):
 
 
 class Czas(unittest.TestCase):
+    def test_odpowiedz_null_to_blad_a_nie_awaria(self):
+        import gemini
+        r = gemini.Reader('K', pause=0)
+        r._call = lambda *a: {'candidates': [{'content': {'parts': [{'text': 'null'}]}}]}
+        with self.assertRaises(gemini.GeminiError) as cm:
+            r.read_json(b'x', 'p')
+        self.assertIn('null', str(cm.exception))
+
     def test_timeout_to_ponowienie(self):
         import gemini, urllib.request
         calls = []
