@@ -63,8 +63,8 @@ def parse_rows(rows, today=None):
             conf, note = 'cena', 'sklep nie podaje ilości, więc nie ma ceny za jednostkę'
         elif pack['conf'] == 'check':  # 350/260 g: kilka produktów w jednej cenie
             conf, note = 'cena', 'kilka wariantów wielkości w tej samej cenie, więc cena za jednostkę zależy od wariantu'
-        elif conf == 'check' and pack['unit'] == 'szt' and pb and pb[0] == 'szt' and pb[1] > 0:
-            k = price / pb[1]  # sklep podaje cenę za sztukę: ilość wynika z ceny, o ile jest całkowita
+        elif conf == 'check' and pack['unit'] == 'szt' and pack['amount'] == 1 and pb and pb[0] == 'szt' and pb[1] > 0:
+            k = price / pb[1]  # sklep nie podał liczby sztuk, ale podał cenę za sztukę; podanej ilości nigdy nie nadpisujemy
             if round(k) >= 1 and abs(k - round(k)) / round(k) <= 0.02:
                 pack = dict(pack, amount=float(round(k)))
                 conf, note = 'ok', ''
