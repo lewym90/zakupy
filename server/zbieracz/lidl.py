@@ -4,6 +4,7 @@ import json
 import os
 import re
 
+import gemini
 from gemini import Reader
 from normalize import make_offer, money, parse_base_price, parse_pack, verify
 
@@ -72,6 +73,7 @@ def collect(page, ctx, key, cache_dir, max_pages=140, only=DEFAULT_ONLY, log=pri
     reader = Reader(key)
     offers, warns = [], []
     pages_read = 0
+    fails = 0
     for slug in list_flyers(page, only):
         fl = get_flyer(ctx, slug)
         vf, vt = (fl.get('offerStartDate') or fl.get('startDate') or '')[:10], (fl.get('offerEndDate') or fl.get('endDate') or '')[:10]
@@ -93,7 +95,17 @@ def collect(page, ctx, key, cache_dir, max_pages=140, only=DEFAULT_ONLY, log=pri
                 if not r.ok:
                     warns.append(f'Lidl {slug} str. {p.get("number")}: obraz {r.status}')
                     continue
-                items = reader.read_json(r.body(), PROMPT).get('oferty', [])
+                try:
+                    items = reader.read_json(r.body(), PROMPT).get('oferty', [])
+                except gemini.GeminiError as e:
+                    if e.status in (400, 401, 403, 404):
+                        raise  # problem z kluczem/modelem: dalsze strony też się nie uda
+                    fails += 1
+                    warns.append(f'Lidl {slug} str. {p.get("number")}: {e}')
+                    log(f'Lidl {slug} str. {p.get("number")}: BŁĄD {e}')
+                    if fails >= 5:
+                        raise
+                    continue
                 json.dump(items, open(ck, 'w'), ensure_ascii=False)
                 pages_read += 1
                 log(f'Lidl {slug} str. {p.get("number")}: {len(items)} ofert')

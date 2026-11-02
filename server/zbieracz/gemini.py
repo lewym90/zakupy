@@ -18,7 +18,7 @@ class GeminiError(Exception):
         self.status = status
 
 
-def _req(url, key, body=None, timeout=120):
+def _req(url, key, body=None, timeout=180):
     data = json.dumps(body).encode() if body is not None else None
     r = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json', 'x-goog-api-key': key})
     try:
@@ -32,6 +32,8 @@ def _req(url, key, body=None, timeout=120):
         raise GeminiError(e.code, f'Gemini {e.code}: {msg[:200]}')
     except urllib.error.URLError as e:
         raise GeminiError(0, f'Brak połączenia z Gemini: {e.reason}')
+    except (TimeoutError, OSError) as e:  # np. "The read operation timed out"
+        raise GeminiError(0, f'Gemini nie odpowiedziało w czasie: {e}')
 
 
 def pick_flash(models):
@@ -78,7 +80,7 @@ class Reader:
                 txt = ''.join(p.get('text', '') for p in j['candidates'][0]['content']['parts'])
                 return json.loads(txt)
             except GeminiError as e:
-                if e.status in (429, 500, 503) and attempt < 3:
+                if e.status in (0, 429, 500, 503) and attempt < 3:
                     time.sleep(20 * (attempt + 1))
                     continue
                 raise

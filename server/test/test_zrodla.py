@@ -131,5 +131,30 @@ class Lidl(unittest.TestCase):
         srv.shutdown()
 
 
+
+class Czas(unittest.TestCase):
+    def test_timeout_to_ponowienie(self):
+        import gemini, urllib.request
+        calls = []
+        orig = urllib.request.urlopen
+
+        class Resp:
+            def __enter__(s): return s
+            def __exit__(s, *a): pass
+            def read(s): return json.dumps({'candidates': [{'content': {'parts': [{'text': '{"oferty": []}'}]}}]}).encode()
+
+        def fake(r, timeout=None):
+            calls.append(1)
+            if len(calls) == 1: raise TimeoutError('The read operation timed out')
+            return Resp()
+        urllib.request.urlopen = fake
+        gemini.time.sleep = lambda s: None
+        try:
+            self.assertEqual(gemini.Reader('K', 'gemini-3.8-flash', pause=0).read_json(b'x', 'p'), {'oferty': []})
+        finally:
+            urllib.request.urlopen = orig
+        self.assertEqual(len(calls), 2)
+
+
 if __name__ == '__main__':
     unittest.main()
