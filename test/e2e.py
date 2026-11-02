@@ -104,6 +104,28 @@ try:
     pg.screenshot(path=f'{OUT}/09b-ustawienia.png', full_page=True)
     pg.click('[data-tab="start"]')
 
+    # oferty z serwera (atrapa pliku): pobranie, lista, porównanie, wyszukiwanie, znacznik "do sprawdzenia", tylko do odczytu
+    import datetime as _dt
+    until = (_dt.date.today() + _dt.timedelta(days=3)).isoformat()
+    mk = lambda i, st, n, pr, am, conf: {'id': i, 'store': st, 'name': n, 'brand': '', 'price': pr, 'old': 0, 'amount': am, 'unit': 'g', 'mode': 'unit', 'need': 1, 'pct': 0, 'from': '', 'until': until, 'cond': '', 'section': '', 'src': 'html', 'conf': conf, 'note': 'cena jednostkowa nie zgadza się' if conf == 'check' else ''}
+    feed = {'v': 1, 'updated': _dt.datetime.now().isoformat(), 'stores': {'Kaufland': {'ok': True, 'count': 1}, 'Lidl': {'ok': False, 'msg': 'Brak klucza Gemini'}},
+            'offers': [mk('k1', 'Kaufland', 'Masło ekstra Łaciate', 649, 200, 'ok'), mk('l1', 'Lidl', 'Masło polskie', 599, 200, 'check')]}
+    pg.route('**/oferty-test.json', lambda r: r.fulfill(status=200, content_type='application/json', headers={'access-control-allow-origin': '*'}, body=json.dumps(feed)))
+    pg.click('[data-tab="ustawienia"]'); pg.fill('#surl', 'http://localhost:8765/oferty-test.json'); pg.click('[data-act="savesrv"]')
+    pg.wait_for_function("document.getElementById('view').innerText.includes('Brak klucza Gemini')", timeout=5000)
+    check('Pobrane oferty' in pg.inner_text('#view') and '2' in pg.inner_text('#view'), 'serwer: pobrano 2 oferty, widać status sklepów')
+    pg.click('[data-tab="okazje"]'); pg.wait_for_selector('#oq')
+    pg.fill('#oq', 'maslo'); pg.wait_for_timeout(150)
+    t = pg.inner_text('#view'); check('Masło polskie' in t and 'Masło ekstra' in t and 'Cola' not in t and 'odczyt do sprawdzenia' in t, 'serwer: wyszukiwanie "maslo" (bez polskich znaków) i znacznik do sprawdzenia')
+    check(pg.eval_on_selector('#oq', 'e => e === document.activeElement'), 'serwer: pole szukania zachowuje fokus podczas pisania')
+    pg.fill('#oq', ''); pg.click('[data-act="omode"][data-m="porownanie"]'); pg.wait_for_timeout(100)
+    t = pg.inner_text('#view'); check('Masło' in t and 'najtaniej: Lidl' in t, 'serwer: porównanie masła Kaufland vs Lidl')
+    pg.click('[data-act="omode"][data-m="lista"]'); pg.click('[data-act="offer"][data-id="s:k1"]'); pg.wait_for_selector('.sheet')
+    check('nie można jej edytować' in pg.inner_text('.sheet') and pg.query_selector('.sheet #o-name') is None, 'serwer: oferta tylko do odczytu')
+    pg.screenshot(path=f'{OUT}/09c-oferta-serwer.png'); pg.click('[data-close]')
+    pg.reload(); pg.wait_for_selector('.tab'); pg.click('[data-tab="okazje"]'); check('Masło polskie' in pg.inner_text('#view'), 'serwer: oferty zostają po przeładowaniu (pamięć telefonu)')
+    pg.click('[data-tab="start"]')
+
     # offline po pierwszym załadowaniu (service worker)
     pg.wait_for_function('navigator.serviceWorker.ready.then(()=>true)'); pg.reload(); time.sleep(1)
     ctx.set_offline(True); pg.reload(); pg.wait_for_selector('.tape'); check(True, 'działa offline po przeładowaniu'); ctx.set_offline(False)

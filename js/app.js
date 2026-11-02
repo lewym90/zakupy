@@ -5,9 +5,9 @@ import { products, matchProduct, verdict, monthStats, monthTotals, receiptTotal,
 import { readReceipt, DEFAULT_MODEL, effectiveModel, listModels, pickFlash } from './gemini.js';
 import { offerCalc, compareGroups, familyOf, offerLabel, UNITS } from './offers.js';
 
-const VERSION = '0.2.1';
+const VERSION = '0.3.0';
 const NOW_YM = () => todayISO().slice(0, 7);
-const S = { receipts: [], offers: [], kv: {}, tab: 'start', omode: 'lista', ym: NOW_YM(), q: '', cat: '', ocat: '', lastStore: 'Biedronka' };
+const S = { receipts: [], offers: [], kv: {}, tab: 'start', omode: 'lista', ym: NOW_YM(), q: '', cat: '', ocat: '', lastStore: 'Biedronka', srv: null, oq: '' };
 const view = document.getElementById('view');
 
 const ICON = {
@@ -30,7 +30,8 @@ function toast(msg) {
 async function init() {
   const [receipts, offers] = await Promise.all([all('receipts'), all('offers')]);
   S.receipts = receipts; S.offers = offers;
-  for (const k of ['limit', 'catLimits', 'geminiKey', 'geminiModel']) S.kv[k] = await kvGet(k);
+  for (const k of ['limit', 'catLimits', 'geminiKey', 'geminiModel', 'srvUrl']) S.kv[k] = await kvGet(k);
+  S.srv = (await kvGet('srvOffers')) || null;
   document.getElementById('tabbar').innerHTML = TABS.map(([id, n]) =>
     `<button class="tab" data-tab="${id}"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON[id]}</svg>${n}</button>`).join('');
   document.getElementById('tabbar').addEventListener('click', e => {
@@ -41,9 +42,11 @@ async function init() {
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
   startUpdates();
   render();
+  fetchSrv(false);
 }
 
 function render() {
+  S._p = null;
   document.querySelectorAll('.tab').forEach(b => b.setAttribute('aria-current', b.dataset.tab === S.tab ? 'page' : 'false'));
   view.dataset.screen = S.tab;
   view.innerHTML = SCREENS[S.tab]();
@@ -77,7 +80,7 @@ function start() {
     .map(([c, v]) => `<div class="ln-line"><span class="l">${c === '__rest' ? '🧾 Nieprzypisane' : catById(c).e + ' ' + catById(c).n}</span><span class="d"></span><span class="v">${zl(v)}</span></div>`).join('');
   const day = new Date().getDate();
   const proj = cur && day >= 5 && st.spent > 0 ? Math.round((st.spent / day) * daysInMonth(S.ym)) : 0;
-  const good = S.offers.filter(o => o.until >= todayISO()).filter(o => ['best', 'good'].includes(offerVerdict(o).t)).length;
+  const good = allOffers().filter(o => o.until >= todayISO()).filter(o => ['best', 'good'].includes(offerVerdict(o).t)).length;
   return `<div class="head"><div><h1>Zakupy</h1><p class="sub">${S.receipts.length ? 'Wasz miesiąc w skrócie' : 'Zacznij od pierwszego paragonu'}</p></div>
     <div class="mnav"><button data-act="mprev" aria-label="Poprzedni miesiąc">‹</button><b>${monthName(S.ym)}</b><button data-act="mnext" aria-label="Następny miesiąc">›</button></div></div>
     <div class="tapewrap"><div class="tape ${st.saved > 0 ? "withst" : ""}">
@@ -129,23 +132,46 @@ function cennik() {
 const RANK = { best: 0, good: 1, slight: 2, norm: 3, few: 4, nodata: 5, bad: 6 };
 const fmtN = n => String(Math.round(n * 1000) / 1000).replace('.', ',');
 const offerUP = o => offerCalc(o).up;
-function offerVerdict(o) { const c = offerCalc(o); return verdict(c.up, c.base, matchProduct(products(S.receipts), o.name)); }
+const prods = () => S._p || (S._p = products(S.receipts));
+function offerVerdict(o) { const c = offerCalc(o); return verdict(c.up, c.base, matchProduct(prods(), o.name)); }
+// Oferty własne + oferty z serwera (tylko do odczytu, id z prefiksem "s:")
+let _ao = { m: null, s: null, v: [] };
+function allOffers() {
+  const sv = S.srv && S.srv.data && Array.isArray(S.srv.data.offers) ? S.srv.data.offers : null;
+  if (_ao.m !== S.offers || _ao.s !== sv) _ao = { m: S.offers, s: sv, v: [...S.offers, ...(sv || []).map(o => ({ ...o, id: 's:' + o.id, cat: catOf(o.name), srv: true }))] };
+  return _ao.v;
+}
+const normQ = t => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ł/g, 'l');
+async function fetchSrv(manual) {
+  const url = (S.kv.srvUrl || '').trim();
+  if (!url) { if (manual) toast('Najpierw wklej adres ofert'); return false; }
+  try {
+    const r = await fetch(url, { cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const j = await r.json();
+    if (!j || j.v !== 1 || !Array.isArray(j.offers)) throw new Error('to nie jest plik ofert');
+    S.srv = { at: Date.now(), data: j }; await kvSet('srvOffers', S.srv);
+    if (!document.querySelector('.sheet')) render();
+    if (manual) toast('Pobrano ' + j.offers.length + ' ofert');
+    return true;
+  } catch (e) { if (manual) toast('Nie udało się pobrać ofert (' + e.message + ')'); return false; }
+}
 const UNIT_LBL = { l: 'l', kg: 'kg', szt: 'szt' };
 
 function offerCard(o, v) {
   const c = offerCalc(o);
   return `<button class="offer" data-act="offer" data-id="${o.id}"><span class="em">${catById(o.cat).e}</span>
-    <span class="mid"><span class="t">${esc(o.name)}</span><span class="hint">${esc(o.store)} · do ${fmtDate(o.until)}${o.cond ? ' · ' + esc(o.cond) : ''}</span><span class="hint">${esc(offerLabel(o, zl, fmtN))}</span>${v ? `<span class="pill ${v.t}">${esc(v.txt)}</span>` : ''}</span>
+    <span class="mid"><span class="t">${esc(o.name)}</span><span class="hint">${esc(o.store)} · do ${fmtDate(o.until)}${o.cond ? ' · ' + esc(o.cond) : ''}</span><span class="hint">${esc(offerLabel(o, zl, fmtN))}</span>${v ? `<span class="pill ${v.t}">${esc(v.txt)}</span>` : ''}${o.conf === 'check' ? '<span class="pill nodata">odczyt do sprawdzenia</span>' : ''}</span>
     <span class="p num"><b>${zl(c.up)}</b><small>za ${UNIT_LBL[c.base]}</small></span></button>`;
 }
 
 function okazje() {
   const today = todayISO();
-  const act = S.offers.filter(o => o.until >= today), old = S.offers.length - act.length;
+  const every = allOffers(), act = every.filter(o => o.until >= today), old = S.offers.filter(o => o.until < today).length;
   const seg = `<div class="seg" role="tablist"><button aria-pressed="${S.omode === 'lista'}" data-act="omode" data-m="lista">Lista</button><button aria-pressed="${S.omode === 'porownanie'}" data-act="omode" data-m="porownanie">Porównanie</button></div>`;
   let body;
   if (S.omode === 'porownanie') {
-    const groups = compareGroups(S.offers, today);
+    const groups = compareGroups(every, today);
     body = groups.length ? '<div class="cmpgrid">' + groups.map(g => {
       const b = g.best;
       const rows = g.rows.map(r => `<button class="cmp-row ${r.rank === 1 ? 'best' : ''}" data-act="offer" data-id="${r.o.id}">
@@ -157,10 +183,11 @@ function okazje() {
       : `<div class="empty"><div class="big">⚖️</div><b>Na razie nie ma czego porównać</b><p>Porównanie pojawi się, gdy dodasz dwie aktywne okazje na podobny produkt (np. cola w Lidlu i w Kauflandzie).</p><button class="btn" data-act="newoffer">Dodaj okazję</button></div>`;
   } else {
     const used = [...new Set(act.map(o => o.cat))];
-    const list = act.filter(o => !S.ocat || o.cat === S.ocat).map(o => ({ o, v: offerVerdict(o) }));
+    const q = normQ(S.oq).trim();
+    const list = act.filter(o => (!S.ocat || o.cat === S.ocat) && (!q || normQ(o.store + ' ' + o.name).includes(q))).map(o => ({ o, v: offerVerdict(o) }));
     list.sort((a, b) => RANK[a.v.t] - RANK[b.v.t] || offerUP(a.o) - offerUP(b.o));
     const chips = `<div class="chips"><button class="chip" aria-pressed="${!S.ocat}" data-act="ocat" data-c="">Wszystko</button>${CATS.filter(c => used.includes(c.id)).map(c => `<button class="chip" aria-pressed="${S.ocat === c.id}" data-act="ocat" data-c="${c.id}">${c.e} ${c.n}</button>`).join('')}</div>`;
-    body = (act.length ? chips : '') + (list.length ? `<div class="list grid">${list.map(({ o, v }) => offerCard(o, v)).join('')}</div>` : `<div class="empty"><div class="big">⚡</div><b>${act.length ? 'Brak okazji w tej kategorii' : 'Brak aktywnych okazji'}</b><p>${act.length ? 'Wybierz inną kategorię.' : 'Na razie dodajesz promocje ręcznie. Automatyczny odczyt gazetek dodamy w kolejnym kroku.'}</p>${act.length ? '' : '<button class="btn" data-act="newoffer">Dodaj okazję</button>'}</div>`);
+    body = (act.length ? `<input class="search" id="oq" type="search" placeholder="Szukaj okazji, np. masło" value="${esc(S.oq)}" autocomplete="off">` + chips : '') + (list.length ? `<div class="list grid">${list.map(({ o, v }) => offerCard(o, v)).join('')}</div>` : `<div class="empty"><div class="big">⚡</div><b>${act.length ? 'Nic nie pasuje' : 'Brak aktywnych okazji'}</b><p>${act.length ? 'Zmień wyszukiwanie lub kategorię.' : 'Dodaj promocję ręcznie albo podłącz serwer z ofertami w Ustawieniach.'}</p>${act.length ? '' : '<button class="btn" data-act="newoffer">Dodaj okazję</button>'}</div>`);
   }
   return `<div class="head"><div><h1>Okazje</h1><p class="sub">${S.omode === 'porownanie' ? 'Która oferta wychodzi taniej' : 'Oceniane względem Waszych cen'}</p></div><button class="btn sm" data-act="newoffer">Dodaj</button></div>
     ${seg}${body}
@@ -188,6 +215,10 @@ function budzet() {
 }
 
 /* ---------- ustawienia ---------- */
+function srvStores() {
+  const st = S.srv && S.srv.data && S.srv.data.stores; if (!st) return '';
+  return Object.entries(st).map(([n, x]) => `<div class="kv"><span>${esc(n)}</span><b class="${x.ok ? 'down' : 'up'}">${x.ok ? (x.count != null ? x.count + ' ofert' : 'ok') : 'błąd'}</b></div>${!x.ok && x.msg ? `<p class="hint" style="margin:0 0 6px">${esc(x.msg)}</p>` : ''}`).join('');
+}
 function ustawienia() {
   const key = S.kv.geminiKey || '';
   const n = S.receipts.length, nl = S.receipts.reduce((x, r) => x + r.lines.length, 0);
@@ -206,6 +237,13 @@ function ustawienia() {
       <label class="field"><span>Model</span><input id="gmodel" value="${esc(effectiveModel(S.kv.geminiModel))}"></label>
       <p class="hint" id="key-status" style="margin:0 0 10px"></p>
       <div class="row"><button class="btn sm" data-act="savegem">Zapisz</button><button class="btn ghost sm" data-act="testkey">Sprawdź klucz</button>${key ? '<button class="btn ghost sm" data-act="delkey">Usuń klucz</button>' : ''}</div></div>
+    <h2>Oferty z serwera</h2><div class="card">
+      <div class="kv"><span>Pobrane oferty</span><b>${S.srv && S.srv.data ? S.srv.data.offers.length : '—'}</b></div>
+      <div class="kv"><span>Zebrane na serwerze</span><b>${S.srv && S.srv.data && S.srv.data.updated ? esc(new Date(S.srv.data.updated).toLocaleString('pl-PL', { dateStyle: 'short', timeStyle: 'short' })) : '—'}</b></div>
+      ${srvStores()}
+      <p class="hint" style="margin:8px 0 10px">Serwer zbiera oferty Kauflanda i Lidla dwa razy dziennie. Wklej adres, który pokazał instalator.</p>
+      <label class="field"><span>Adres ofert</span><input id="surl" inputmode="url" autocomplete="off" value="${esc(S.kv.srvUrl || '')}" placeholder="https://…/zakupy-oferty/…/oferty.json"></label>
+      <div class="row"><button class="btn sm" data-act="savesrv">Zapisz i pobierz</button><button class="btn ghost sm" data-act="getsrv">Pobierz teraz</button></div></div>
     <h2>Dane i kopie</h2><div class="card">
       <div class="kv"><span>Paragony</span><b>${n}</b></div>
       <div class="kv"><span>Pozycje</span><b>${nl}</b></div>
@@ -433,7 +471,24 @@ function openProduct(key) {
   return el;
 }
 
+function openSrvOffer(o) {
+  const c = offerCalc(o), v = offerVerdict(o);
+  const el = sheet('Oferta ' + o.store, `<h2 style="margin-top:0">${esc(o.name)}</h2>
+    <div class="kv"><span>Cena</span><b>${zl(o.price)}</b></div>
+    ${o.old ? `<div class="kv"><span>Cena przed obniżką</span><b>${zl(o.old)}</b></div>` : ''}
+    <div class="kv"><span>Opakowanie</span><b>${esc(offerLabel(o, zl, fmtN))}</b></div>
+    <div class="kv"><span>Cena za ${UNIT_LBL[c.base]}</span><b>${zl(c.up)}</b></div>
+    <div class="kv"><span>Ważna</span><b>${o.from ? fmtDate(o.from) + ' – ' : 'do '}${fmtDate(o.until)}</b></div>
+    ${o.cond ? `<div class="kv"><span>Warunek</span><b>${esc(o.cond)}</b></div>` : ''}
+    ${v ? `<p><span class="pill ${v.t}">${esc(v.txt)}</span></p>` : ''}
+    ${o.conf === 'check' ? `<p class="hint">Ten odczyt jest do sprawdzenia${o.note ? ': ' + esc(o.note) : ''}. Porównaj z gazetką w sklepie.</p>` : ''}
+    <p class="hint">Oferta pobrana automatycznie z serwera, więc nie można jej edytować.</p>`);
+  return el;
+}
+
 function openOffer(id) {
+  const sv = id && String(id).startsWith('s:') && allOffers().find(o => o.id === id);
+  if (sv) return openSrvOffer(sv);
   const ex = id && S.offers.find(o => o.id === id);
   const inDays = k => { const d = new Date(); d.setDate(d.getDate() + k); return todayISO(d); };
   const d = ex ? { ...ex, mode: ex.mode || 'unit', need: String(ex.need || 1), pct: String(ex.pct || 50), price: centsToInput(ex.price), amount: fmtN(ex.amount) }
@@ -468,7 +523,7 @@ function openOffer(id) {
     if (!o) { prev.innerHTML = '<p class="hint">Wpisz cenę i wielkość opakowania, a przeliczę to na litr, kilogram lub sztukę i ocenię na tle Waszych zakupów.</p>'; return; }
     const c = offerCalc(o), v = verdict(c.up, c.base, matchProduct(products(S.receipts), d.name));
     let rank = '';
-    const g = compareGroups([...S.offers.filter(x => x.id !== d.id), { ...o, id: 'new' }], todayISO()).find(g => g.rows.some(r => r.o.id === 'new'));
+    const g = compareGroups([...allOffers().filter(x => x.id !== d.id), { ...o, id: 'new' }], todayISO()).find(g => g.rows.some(r => r.o.id === 'new'));
     if (g) { const me = g.rows.find(r => r.o.id === 'new'); rank = `<div class="kv"><span>Na tle innych (${esc(g.fam.n)})</span><b>${me.rank}. z ${g.rows.length}${me.rank === 1 ? '' : ', najtaniej ' + esc(g.best.o.store)}</b></div>`; }
     prev.innerHTML = `<div class="card"><div class="kv"><span>${esc(offerLabel(o, zl, fmtN))}</span><b>${zl(c.total)}</b></div>
       <div class="kv"><span>Cena za ${UNIT_LBL[c.base]}</span><b>${zl(c.up)}</b></div>${c.need > 1 ? `<div class="kv"><span>Średnio za sztukę</span><b>${zl(c.pack)}</b></div>` : ''}${rank}
@@ -545,6 +600,11 @@ async function doImport(file) {
 view.addEventListener('input', e => {
   if (e.target.dataset.q) { S.q = e.target.value; const pos = e.target.selectionStart; render(); const n = view.querySelector('[data-q]'); n.focus(); n.setSelectionRange(pos, pos); }
 });
+view.addEventListener('input', e => {
+  if (e.target.id !== 'oq') return;
+  S.oq = e.target.value; const pos = e.target.selectionStart; render();
+  const n = view.querySelector('#oq'); if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch (_) {} }
+});
 view.addEventListener('change', e => { if (e.target.id === 'impfile' && e.target.files[0]) doImport(e.target.files[0]); });
 view.addEventListener('click', async e => {
   const b = e.target.closest('[data-act]'); if (!b) return;
@@ -576,6 +636,8 @@ view.addEventListener('click', async e => {
     for (const k of ['limit', 'catLimits']) { S.kv[k] = k === 'limit' ? 0 : {}; await kvSet(k, S.kv[k]); }
     S.receipts = []; S.offers = []; render(); toast('Dane usunięte');
   }
+  else if (a === 'savesrv') { S.kv.srvUrl = view.querySelector('#surl').value.trim(); await kvSet('srvUrl', S.kv.srvUrl); const ok = await fetchSrv(true); if (ok) render(); }
+  else if (a === 'getsrv') { if (await fetchSrv(true)) render(); }
   else if (a === 'savegem') { S.kv.geminiKey = view.querySelector('#gkey').value.trim(); S.kv.geminiModel = effectiveModel(view.querySelector('#gmodel').value.trim()); await kvSet('geminiKey', S.kv.geminiKey); await kvSet('geminiModel', S.kv.geminiModel); render(); toast('Ustawienia zapisane'); }
 });
 
