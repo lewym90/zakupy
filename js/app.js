@@ -4,7 +4,7 @@ import { esc, zl, zlShort, parseMoney, parseNum, centsToInput, norm, uid, todayI
 import { products, matchProduct, verdict, monthStats, monthTotals, receiptTotal, lineSum } from './calc.js';
 import { readReceipt, DEFAULT_MODEL } from './gemini.js';
 
-const VERSION = '0.1.0';
+const VERSION = '0.1.1';
 const NOW_YM = () => todayISO().slice(0, 7);
 const S = { receipts: [], offers: [], kv: {}, tab: 'start', ym: NOW_YM(), q: '', cat: '', ocat: '', lastStore: 'Biedronka' };
 const view = document.getElementById('view');
@@ -182,6 +182,19 @@ function sheet(title, body, footer = '') {
   return el;
 }
 
+function askKey() {
+  const el = sheet('Odczyt zdjęć paragonów', `<p>Do odczytu potrzebny jest Twój darmowy klucz Gemini. Zapisze się tylko w tym telefonie.</p>
+    <label class="field"><span>Klucz Gemini</span><input id="ak" type="password" autocomplete="off" placeholder="wklej klucz"></label>
+    <p class="hint">Klucz zrobisz za darmo na aistudio.google.com (Get API key). Nie wysyłaj go nikomu i nie wklejaj do czatu.</p>`,
+    `<button class="btn" style="width:100%" data-ak="save">Zapisz klucz</button>`);
+  el.addEventListener('click', async e => {
+    if (!e.target.closest('[data-ak]')) return;
+    const k = el.querySelector('#ak').value.trim();
+    if (!k) { toast('Wklej klucz'); return; }
+    S.kv.geminiKey = k; await kvSet('geminiKey', k); el.close(); toast('Klucz zapisany. Dotknij teraz „Zrób zdjęcie paragonu”.');
+  });
+}
+
 function pickCat(cur, cb) {
   const el = sheet('Kategoria', `<div class="picker">${CATS.map(c => `<button class="chip ${c.id === cur ? 'on' : ''}" data-c="${c.id}">${c.e} ${c.n}</button>`).join('')}</div>`);
   el.addEventListener('click', e => { const b = e.target.closest('[data-c]'); if (b) { cb(b.dataset.c); el.close(); } });
@@ -209,7 +222,8 @@ function openReceipt(id) {
   function paint() {
     body.innerHTML = `<div class="chips" role="group" aria-label="Sklep">${STORES.map(s => `<button class="chip" aria-pressed="${s === d.store}" data-ea="store" data-s="${s}">${s}</button>`).join('')}</div>
       <label class="field"><span>Data zakupów</span><input type="date" class="f-date" value="${d.date}" max="${todayISO()}"></label>
-      <div class="row" style="margin-bottom:12px"><button class="btn ghost sm" data-ea="photo">📷 Odczytaj ze zdjęcia</button><input type="file" class="f-photo" accept="image/*" hidden></div>
+      <button class="btn" style="width:100%;margin-bottom:6px" data-ea="photo">📷 Zrób zdjęcie paragonu</button>
+      <p class="hint" style="margin:0 0 16px;text-align:center">Odczytam pozycje, Ty tylko sprawdzisz. Możesz też wybrać zdjęcie z galerii albo wpisać ręcznie poniżej.</p><input type="file" class="f-photo" accept="image/*" hidden>
       ${d.banner ? `<div class="stat warn" style="background:#FFF6D9;color:#5A4300">Odczytano ze zdjęcia. Sprawdź każdą żółtą pozycję z paragonem w ręku. <button class="lnk" data-ea="checked">Sprawdziłem</button></div>` : ''}
       <div id="lines">${d.lines.map(lineHtml).join('')}</div>
       <button class="btn line sm" data-ea="add">+ Dodaj pozycję</button>
@@ -261,7 +275,7 @@ function openReceipt(id) {
     else if (a === 'cat') pickCat(d.lines[i].cat, c => { d.lines[i].cat = c; d.lines[i].auto = false; paint(); });
     else if (a === 'checked') { d.lines.forEach(l => (l.chk = false)); d.banner = false; paint(); }
     else if (a === 'photo') {
-      if (!S.kv.geminiKey) { toast('Najpierw dodaj klucz Gemini w Budżet → Dane i kopie'); return; }
+      if (!S.kv.geminiKey) { askKey(); return; }
       body.querySelector('.f-photo').click();
     }
     else if (a === 'delete') { if (confirm('Usunąć ten paragon?')) { await del('receipts', d.id); S.receipts = S.receipts.filter(r => r.id !== d.id); el.close(); render(); toast('Paragon usunięty'); } }
