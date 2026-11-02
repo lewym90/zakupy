@@ -15,12 +15,38 @@ eq(verdict(2200 + 100, 'kg', p[0]).t, 'slight', 'slight (pct 6%)'); eq(verdict(2
 eq(verdict(1000, 'kg', { ...p[0], n: 2 }).t, 'few', 'za mało');
 const st = monthStats(rs, '2026-10'); eq(st.spent, 2400 + 3000 + 2200 + 1500, 'wydane'); eq(st.saved, 400, 'oszczędzone'); eq(st.n, 4, 'n paragonów');
 const st2 = monthStats([{ id: 'x', date: '2026-11-02', store: 'Lidl', declared: 0, lines: [{ name: 'A', cat: 'inne', qty: 1, unit: 'szt', total: 1000, reg: 0 }, { name: 'Rabat', cat: 'inne', qty: 1, unit: 'szt', total: -300, reg: 0 }] }], '2026-11'); eq(st2.saved, 300, 'rabat liczony jako oszczędność'); eq(st2.spent, 700, 'wydane po rabacie');
-console.log(bad ? bad + ' błędów' : 'unit OK');
-process.exit(bad ? 1 : 0);
 
 // wersja w app.js i sw.js musi być taka sama (inaczej aktualizacja się nie pobierze)
 import { readFileSync } from 'node:fs';
 const av = /VERSION = '([^']+)'/.exec(readFileSync(new URL('../js/app.js', import.meta.url), 'utf8'))[1];
 const sv = /VER = 'zakupy-v([^']+)'/.exec(readFileSync(new URL('../sw.js', import.meta.url), 'utf8'))[1];
-if (av !== sv) { console.error('Różne wersje: app.js ' + av + ' vs sw.js ' + sv); process.exit(1); }
+if (av !== sv) { bad++; console.log('FAIL wersje: app.js ' + av + ' vs sw.js ' + sv); }
 console.log('wersje zgodne', av);
+
+// ---- oferty: przeliczanie i porównywanie ----
+import { offerCalc, familyOf, compareGroups } from '../js/offers.js';
+const O = (store, name, price, amount, unit, extra = {}) => ({ id: store + name, store, name, price, amount, unit, until: '2026-12-31', mode: 'unit', need: 1, ...extra });
+// Kaufland: 2 × 2 l za 13,98 (podane jako komplet) => 3,50 zł/l
+let c = offerCalc(O('Kaufland', 'Coca-Cola', 1398, 2, 'l', { mode: 'bundle', need: 2 }));
+eq(c.up, 175 * 2 / 2 === 349 ? 349 : 350, 'kaufland cola za litr'); // 1398 / 4 l = 349,5 => 350
+// Lidl: 3 butelki 1,5 l za 9,99 => 9,99 / 4,5 = 2,22 zł/l
+c = offerCalc(O('Lidl', 'Coca-Cola', 999, 1.5, 'l', { mode: 'bundle', need: 3 }));
+eq(c.up, 222, 'lidl cola za litr'); eq(c.pack, 333, 'lidl cola za butelkę'); eq(c.total, 999, 'lidl razem');
+// drugi 50% taniej: 2 szt. po 10,00 => 15,00 za 2 = 7,50 za sztukę
+c = offerCalc(O('X', 'Jogurt', 1000, 1, 'szt', { mode: 'nth', need: 2, pct: 50 })); eq(c.total, 1500, 'drugi 50% - razem'); eq(c.pack, 750, 'drugi 50% - sztuka');
+// gramy i mililitry
+eq(offerCalc(O('X', 'Ser', 399, 135, 'g')).up, 2956, '135 g za 3,99 = 29,56 zł/kg'); eq(offerCalc(O('X', 'Olej', 499, 1000, 'ml')).base, 'l', 'ml -> l');
+eq(familyOf('Coca-Cola Zero 2 l').id, 'cola', 'rodzina cola'); eq(familyOf('Serek wiejski'), null, 'serek to nie ser żółty'); eq(familyOf('Ser Gouda 100 g').id, 'ser', 'gouda to ser');
+eq(familyOf('Woda źródlana 5 l').id, 'woda', 'woda'); eq(familyOf('Wódka czysta'), null, 'wódka to nie woda');
+const g = compareGroups([
+  O('Kaufland', 'Coca-Cola', 1398, 2, 'l', { mode: 'bundle', need: 2 }),
+  O('Lidl', 'Coca-Cola', 999, 1.5, 'l', { mode: 'bundle', need: 3 }),
+  O('Biedronka', 'Pepsi', 549, 2, 'l'),
+  O('Lidl', 'Mleko 3,2%', 299, 1, 'l'),                // sama w rodzinie => nie ma grupy
+  O('Lidl', 'Coca-Cola puszka', 349, 330, 'ml', { until: '2020-01-01' }), // po terminie => pominięta
+], '2026-11-02');
+eq(g.length, 1, 'jedna grupa porównań'); eq(g[0].rows.map(r => r.o.store).join(), 'Lidl,Biedronka,Kaufland', 'kolejność: Lidl najtaniej'); eq(g[0].rows[0].rank, 1, 'miejsce 1');
+console.log('oferty OK');
+
+console.log(bad ? bad + ' błędów' : 'unit OK');
+process.exit(bad ? 1 : 0);

@@ -3,10 +3,11 @@ import { CATS, catOf, catById, STORES } from './cats.js';
 import { esc, zl, zlShort, parseMoney, parseNum, centsToInput, norm, uid, todayISO, ymOf, monthName, monthShort, addMonth, daysInMonth, fmtDate } from './util.js';
 import { products, matchProduct, verdict, monthStats, monthTotals, receiptTotal, lineSum } from './calc.js';
 import { readReceipt, DEFAULT_MODEL } from './gemini.js';
+import { offerCalc, compareGroups, familyOf, offerLabel, UNITS } from './offers.js';
 
-const VERSION = '0.1.2';
+const VERSION = '0.2.0';
 const NOW_YM = () => todayISO().slice(0, 7);
-const S = { receipts: [], offers: [], kv: {}, tab: 'start', ym: NOW_YM(), q: '', cat: '', ocat: '', lastStore: 'Biedronka' };
+const S = { receipts: [], offers: [], kv: {}, tab: 'start', omode: 'lista', ym: NOW_YM(), q: '', cat: '', ocat: '', lastStore: 'Biedronka' };
 const view = document.getElementById('view');
 
 const ICON = {
@@ -44,6 +45,7 @@ async function init() {
 
 function render() {
   document.querySelectorAll('.tab').forEach(b => b.setAttribute('aria-current', b.dataset.tab === S.tab ? 'page' : 'false'));
+  view.dataset.screen = S.tab;
   view.innerHTML = SCREENS[S.tab]();
   const names = [...new Map(S.receipts.flatMap(r => r.lines).filter(l => l.name).map(l => [norm(l.name), l.name])).values()];
   document.getElementById('prod').innerHTML = names.sort().map(n => `<option value="${esc(n)}">`).join('');
@@ -125,21 +127,43 @@ function cennik() {
 }
 
 const RANK = { best: 0, good: 1, slight: 2, norm: 3, few: 4, nodata: 5, bad: 6 };
-const offerUP = o => Math.round(o.price / (o.amount || 1));
-function offerVerdict(o) { return verdict(offerUP(o), o.unit, matchProduct(products(S.receipts), o.name)); }
+const fmtN = n => String(Math.round(n * 1000) / 1000).replace('.', ',');
+const offerUP = o => offerCalc(o).up;
+function offerVerdict(o) { const c = offerCalc(o); return verdict(c.up, c.base, matchProduct(products(S.receipts), o.name)); }
+const UNIT_LBL = { l: 'l', kg: 'kg', szt: 'szt' };
+
+function offerCard(o, v) {
+  const c = offerCalc(o);
+  return `<button class="offer" data-act="offer" data-id="${o.id}"><span class="em">${catById(o.cat).e}</span>
+    <span class="mid"><span class="t">${esc(o.name)}</span><span class="hint">${esc(o.store)} · do ${fmtDate(o.until)}${o.cond ? ' · ' + esc(o.cond) : ''}</span><span class="hint">${esc(offerLabel(o, zl, fmtN))}</span>${v ? `<span class="pill ${v.t}">${esc(v.txt)}</span>` : ''}</span>
+    <span class="p num"><b>${zl(c.up)}</b><small>za ${UNIT_LBL[c.base]}</small></span></button>`;
+}
 
 function okazje() {
   const today = todayISO();
   const act = S.offers.filter(o => o.until >= today), old = S.offers.length - act.length;
-  const used = [...new Set(act.map(o => o.cat))];
-  let list = act.filter(o => !S.ocat || o.cat === S.ocat).map(o => ({ o, v: offerVerdict(o) }));
-  list.sort((a, b) => RANK[a.v.t] - RANK[b.v.t] || offerUP(a.o) - offerUP(b.o));
-  const chips = `<div class="chips"><button class="chip" aria-pressed="${!S.ocat}" data-act="ocat" data-c="">Wszystko</button>${CATS.filter(c => used.includes(c.id)).map(c => `<button class="chip" aria-pressed="${S.ocat === c.id}" data-act="ocat" data-c="${c.id}">${c.e} ${c.n}</button>`).join('')}</div>`;
-  const cards = list.map(({ o, v }) => `<button class="offer" style="width:100%;text-align:left" data-act="offer" data-id="${o.id}"><span class="em">${catById(o.cat).e}</span>
-    <span class="mid"><span class="t">${esc(o.name)}</span><span class="hint">${esc(o.store)} · do ${fmtDate(o.until)}${o.cond ? ' · ' + esc(o.cond) : ''}</span><br><span class="pill ${v.t}">${esc(v.txt)}</span></span>
-    <span class="p num"><b>${zl(o.price)}</b><small>${zl(offerUP(o))}/${o.unit}</small></span></button>`).join('');
-  return `<div class="head"><div><h1>Okazje</h1><p class="sub">Oceniane względem Waszych cen</p></div><button class="btn sm" data-act="newoffer">Dodaj</button></div>
-    ${act.length ? chips : ''}${list.length ? `<div class="list">${cards}</div>` : `<div class="empty"><div class="big">⚡</div><b>${act.length ? 'Brak okazji w tej kategorii' : 'Brak aktywnych okazji'}</b><p>${act.length ? 'Wybierz inną kategorię.' : 'Na razie dodajesz promocje ręcznie. Automatyczny odczyt gazetek dodamy w kolejnym kroku.'}</p>${act.length ? '' : '<button class="btn" data-act="newoffer">Dodaj okazję</button>'}</div>`}
+  const seg = `<div class="seg" role="tablist"><button aria-pressed="${S.omode === 'lista'}" data-act="omode" data-m="lista">Lista</button><button aria-pressed="${S.omode === 'porownanie'}" data-act="omode" data-m="porownanie">Porównanie</button></div>`;
+  let body;
+  if (S.omode === 'porownanie') {
+    const groups = compareGroups(S.offers, today);
+    body = groups.length ? '<div class="cmpgrid">' + groups.map(g => {
+      const b = g.best;
+      const rows = g.rows.map(r => `<button class="cmp-row ${r.rank === 1 ? 'best' : ''}" data-act="offer" data-id="${r.o.id}">
+        <span class="rk">${r.rank}</span>
+        <span class="mid"><span class="t">${esc(r.o.store)}</span><span class="hint">${esc(r.o.name)}</span><span class="hint">${esc(offerLabel(r.o, zl, fmtN))}</span></span>
+        <span class="p num"><b>${zl(r.c.up)}</b><small>za ${UNIT_LBL[g.base]}${r.rank > 1 ? ' · +' + Math.round(r.over * 100) + '%' : ''}</small></span></button>`).join('');
+      return `<div class="card cmp"><div class="cmp-h"><b>${esc(g.fam.n)}</b><span class="hint">najtaniej: ${esc(b.o.store)}, ${zl(b.c.up)} za ${UNIT_LBL[g.base]}</span></div>${rows}</div>`;
+    }).join('') + '</div><p class="hint" style="text-align:center">Porównuję ten sam rodzaj produktu po cenie za litr, kilogram lub sztukę. Marki mogą się różnić, więc sprawdź, czy to naprawdę to, czego szukasz.</p>'
+      : `<div class="empty"><div class="big">⚖️</div><b>Na razie nie ma czego porównać</b><p>Porównanie pojawi się, gdy dodasz dwie aktywne okazje na podobny produkt (np. cola w Lidlu i w Kauflandzie).</p><button class="btn" data-act="newoffer">Dodaj okazję</button></div>`;
+  } else {
+    const used = [...new Set(act.map(o => o.cat))];
+    const list = act.filter(o => !S.ocat || o.cat === S.ocat).map(o => ({ o, v: offerVerdict(o) }));
+    list.sort((a, b) => RANK[a.v.t] - RANK[b.v.t] || offerUP(a.o) - offerUP(b.o));
+    const chips = `<div class="chips"><button class="chip" aria-pressed="${!S.ocat}" data-act="ocat" data-c="">Wszystko</button>${CATS.filter(c => used.includes(c.id)).map(c => `<button class="chip" aria-pressed="${S.ocat === c.id}" data-act="ocat" data-c="${c.id}">${c.e} ${c.n}</button>`).join('')}</div>`;
+    body = (act.length ? chips : '') + (list.length ? `<div class="list grid">${list.map(({ o, v }) => offerCard(o, v)).join('')}</div>` : `<div class="empty"><div class="big">⚡</div><b>${act.length ? 'Brak okazji w tej kategorii' : 'Brak aktywnych okazji'}</b><p>${act.length ? 'Wybierz inną kategorię.' : 'Na razie dodajesz promocje ręcznie. Automatyczny odczyt gazetek dodamy w kolejnym kroku.'}</p>${act.length ? '' : '<button class="btn" data-act="newoffer">Dodaj okazję</button>'}</div>`);
+  }
+  return `<div class="head"><div><h1>Okazje</h1><p class="sub">${S.omode === 'porownanie' ? 'Która oferta wychodzi taniej' : 'Oceniane względem Waszych cen'}</p></div><button class="btn sm" data-act="newoffer">Dodaj</button></div>
+    ${seg}${body}
     ${old ? `<p style="text-align:center"><button class="lnk" data-act="purge">Usuń zakończone okazje (${old})</button></p>` : ''}`;
 }
 
@@ -403,27 +427,51 @@ function openProduct(key) {
 function openOffer(id) {
   const ex = id && S.offers.find(o => o.id === id);
   const inDays = k => { const d = new Date(); d.setDate(d.getDate() + k); return todayISO(d); };
-  const d = ex ? { ...ex, price: centsToInput(ex.price), amount: String(ex.amount).replace('.', ',') } : { id: null, store: S.lastStore, name: '', cat: 'inne', auto: true, price: '', amount: '1', unit: 'szt', until: inDays(6), cond: '' };
+  const d = ex ? { ...ex, mode: ex.mode || 'unit', need: String(ex.need || 1), pct: String(ex.pct || 50), price: centsToInput(ex.price), amount: fmtN(ex.amount) }
+    : { id: null, store: S.lastStore, name: '', cat: 'inne', auto: true, mode: 'unit', need: '1', pct: '50', price: '', amount: '1', unit: 'szt', until: inDays(6), cond: '' };
+  const MODES = [['unit', 'Za sztukę'], ['bundle', 'Komplet'], ['nth', 'Drugi taniej']];
   const el = sheet(ex ? 'Okazja' : 'Nowa okazja', `<div class="chips">${STORES.map(s => `<button class="chip" aria-pressed="${s === d.store}" data-s="${s}">${s}</button>`).join('')}</div>
-    <label class="field"><span>Produkt</span><input class="o-name" list="prod" value="${esc(d.name)}" placeholder="np. karkówka wieprzowa" autocomplete="off"></label>
-    <div class="row" style="flex-wrap:nowrap"><label class="field" style="flex:1"><span>Cena promocyjna</span><input class="o-price" inputmode="decimal" value="${esc(d.price)}" placeholder="0,00"></label>
-      <label class="field" style="width:96px"><span>Za ile</span><input class="o-amount" inputmode="decimal" value="${esc(d.amount)}"></label>
-      <label class="field" style="width:84px"><span>Jednostka</span><select class="o-unit">${['szt', 'kg', 'l'].map(u => `<option ${u === d.unit ? 'selected' : ''}>${u}</option>`).join('')}</select></label></div>
+    <label class="field"><span>Produkt</span><input class="o-name" list="prod" value="${esc(d.name)}" placeholder="np. Coca-Cola" autocomplete="off"></label>
+    <div class="field"><span>Rodzaj promocji</span><div class="seg" style="margin:0">${MODES.map(([m, n]) => `<button aria-pressed="${m === d.mode}" data-mode="${m}">${n}</button>`).join('')}</div></div>
+    <div class="row" style="flex-wrap:nowrap"><label class="field" style="flex:1"><span class="o-pl"></span><input class="o-price" inputmode="decimal" value="${esc(d.price)}" placeholder="0,00"></label>
+      <label class="field o-needw" style="width:96px"><span class="o-nl">Ile sztuk</span><input class="o-need" inputmode="numeric" value="${esc(d.need)}"></label>
+      <label class="field o-pctw" style="width:84px"><span>Taniej o %</span><input class="o-pct" inputmode="numeric" value="${esc(d.pct)}"></label></div>
+    <div class="row" style="flex-wrap:nowrap"><label class="field" style="flex:1"><span>Ile w jednym opakowaniu</span><input class="o-amount" inputmode="decimal" value="${esc(d.amount)}"></label>
+      <label class="field" style="width:96px"><span>Jednostka</span><select class="o-unit">${UNITS.map(u => `<option ${u === d.unit ? 'selected' : ''}>${u}</option>`).join('')}</select></label></div>
     <label class="field"><span>Ważna do</span><input type="date" class="o-until" value="${d.until}"></label>
     <label class="field"><span>Warunek (opcjonalnie)</span><input class="o-cond" value="${esc(d.cond)}" placeholder="np. z kartą, limit 3 szt."></label>
     <div class="row" style="margin-bottom:12px"><button class="btn line sm o-cat">${catById(d.cat).e} ${catById(d.cat).n}</button></div><div id="prev"></div>`,
     `<div class="row" style="flex-wrap:nowrap">${ex ? '<button class="btn danger" data-oa="delete">Usuń</button>' : ''}<button class="btn" style="flex:1" data-oa="save">Zapisz okazję</button></div>`);
   const prev = el.querySelector('#prev');
+  const build = () => {
+    const price = parseMoney(d.price), amt = parseNum(d.amount), need = Math.max(1, Math.round(parseNum(d.need) || 1)), pct = parseNum(d.pct);
+    if (isNaN(price) || !(amt > 0) || price <= 0) return null;
+    if (d.mode === 'nth' && (!(pct > 0) || pct > 100 || need < 2)) return null;
+    return { id: d.id || 'new', store: d.store, name: d.name.trim() || '?', cat: d.cat, price, amount: amt, unit: d.unit, until: d.until, cond: d.cond.trim(), mode: d.mode, need: d.mode === 'unit' ? 1 : need, pct: d.mode === 'nth' ? pct : 0 };
+  };
   function upd() {
-    const price = parseMoney(d.price), amt = parseNum(d.amount);
-    if (isNaN(price) || !(amt > 0) || price <= 0) { prev.innerHTML = '<p class="hint">Wpisz cenę, a ocenię tę okazję na tle Waszych zakupów.</p>'; return; }
-    const up = Math.round(price / amt), v = verdict(up, d.unit, matchProduct(products(S.receipts), d.name));
-    prev.innerHTML = `<div class="card"><div class="kv"><span>Cena za ${d.unit}</span><b>${zl(up)}</b></div><div style="padding-top:8px"><span class="pill ${v.t}">${esc(v.txt)}</span></div></div>`;
+    el.querySelector('.o-pl').textContent = d.mode === 'bundle' ? 'Cena za komplet' : d.mode === 'nth' ? 'Cena jednej sztuki' : 'Cena promocyjna';
+    el.querySelector('.o-needw').style.display = d.mode === 'unit' ? 'none' : '';
+    el.querySelector('.o-nl').textContent = d.mode === 'nth' ? 'Ile kupić' : 'Ile sztuk';
+    el.querySelector('.o-pctw').style.display = d.mode === 'nth' ? '' : 'none';
+    el.querySelectorAll('[data-mode]').forEach(x => x.setAttribute('aria-pressed', x.dataset.mode === d.mode));
+    const o = build();
+    if (!o) { prev.innerHTML = '<p class="hint">Wpisz cenę i wielkość opakowania, a przeliczę to na litr, kilogram lub sztukę i ocenię na tle Waszych zakupów.</p>'; return; }
+    const c = offerCalc(o), v = verdict(c.up, c.base, matchProduct(products(S.receipts), d.name));
+    let rank = '';
+    const g = compareGroups([...S.offers.filter(x => x.id !== d.id), { ...o, id: 'new' }], todayISO()).find(g => g.rows.some(r => r.o.id === 'new'));
+    if (g) { const me = g.rows.find(r => r.o.id === 'new'); rank = `<div class="kv"><span>Na tle innych (${esc(g.fam.n)})</span><b>${me.rank}. z ${g.rows.length}${me.rank === 1 ? '' : ', najtaniej ' + esc(g.best.o.store)}</b></div>`; }
+    prev.innerHTML = `<div class="card"><div class="kv"><span>${esc(offerLabel(o, zl, fmtN))}</span><b>${zl(c.total)}</b></div>
+      <div class="kv"><span>Cena za ${UNIT_LBL[c.base]}</span><b>${zl(c.up)}</b></div>${c.need > 1 ? `<div class="kv"><span>Średnio za sztukę</span><b>${zl(c.pack)}</b></div>` : ''}${rank}
+      <div style="padding-top:8px"><span class="pill ${v.t}">${esc(v.txt)}</span></div></div>`;
   }
+  upd();
   el.addEventListener('input', e => {
     const t = e.target;
     if (t.classList.contains('o-name')) { d.name = t.value; if (d.auto) { d.cat = catOf(d.name); el.querySelector('.o-cat').textContent = catById(d.cat).e + ' ' + catById(d.cat).n; } }
     else if (t.classList.contains('o-price')) d.price = t.value;
+    else if (t.classList.contains('o-need')) d.need = t.value;
+    else if (t.classList.contains('o-pct')) d.pct = t.value;
     else if (t.classList.contains('o-amount')) d.amount = t.value;
     else if (t.classList.contains('o-unit')) d.unit = t.value;
     else if (t.classList.contains('o-until')) d.until = t.value;
@@ -435,18 +483,19 @@ function openOffer(id) {
   });
   el.addEventListener('click', async e => {
     const s = e.target.closest('[data-s]');
-    if (s) { d.store = s.dataset.s; el.querySelectorAll('[data-s]').forEach(x => x.setAttribute('aria-pressed', x.dataset.s === d.store)); return; }
+    if (s) { d.store = s.dataset.s; el.querySelectorAll('[data-s]').forEach(x => x.setAttribute('aria-pressed', x.dataset.s === d.store)); upd(); return; }
+    const m = e.target.closest('[data-mode]');
+    if (m) { d.mode = m.dataset.mode; if (d.mode === 'nth' && (parseNum(d.need) || 1) < 2) { d.need = '2'; el.querySelector('.o-need').value = '2'; } if (d.mode === 'bundle' && (parseNum(d.need) || 1) < 2) { d.need = '3'; el.querySelector('.o-need').value = '3'; } upd(); return; }
     if (e.target.closest('.o-cat')) { pickCat(d.cat, c => { d.cat = c; d.auto = false; el.querySelector('.o-cat').textContent = catById(c).e + ' ' + catById(c).n; }); return; }
     const b = e.target.closest('[data-oa]'); if (!b) return;
     if (b.dataset.oa === 'delete') { await del('offers', d.id); S.offers = S.offers.filter(o => o.id !== d.id); el.close(); render(); toast('Okazja usunięta'); return; }
-    const price = parseMoney(d.price), amt = parseNum(d.amount);
-    if (!d.name.trim() || isNaN(price) || price <= 0 || !(amt > 0) || !d.until) { toast('Uzupełnij produkt, cenę i datę ważności'); return; }
-    const o = { id: d.id || uid(), store: d.store, name: d.name.trim(), cat: d.cat, price, amount: amt, unit: d.unit, until: d.until, cond: d.cond.trim() };
+    const built = build();
+    if (!d.name.trim() || !built || !d.until) { toast('Uzupełnij produkt, cenę, wielkość opakowania i datę'); return; }
+    const o = { ...built, id: d.id || uid(), name: d.name.trim() };
     await put('offers', o);
     S.offers = [...S.offers.filter(x => x.id !== o.id), o];
     S.lastStore = o.store; el.close(); render(); toast('Okazja zapisana');
   });
-  upd();
 }
 
 function openCatLimit(c) {
@@ -498,6 +547,7 @@ view.addEventListener('click', async e => {
   else if (a === 'offer') openOffer(b.dataset.id);
   else if (a === 'cat') { S.cat = b.dataset.c; render(); }
   else if (a === 'ocat') { S.ocat = b.dataset.c; render(); }
+  else if (a === 'omode') { S.omode = b.dataset.m; render(); }
   else if (a === 'goto') { S.tab = b.dataset.tab; render(); }
   else if (a === 'mprev') { S.ym = addMonth(S.ym, -1); render(); }
   else if (a === 'mnext') { S.ym = addMonth(S.ym, 1); render(); }

@@ -68,6 +68,25 @@ try:
     pg.screenshot(path=f'{OUT}/08-okazje.png')
     check(pg.locator('.offer').count() == 2, 'dwie okazje na liście')
 
+    # porównanie: cola w Lidlu (3 × 1,5 l za 9,99) i w Kauflandzie (2 × 2 l za 13,98)
+    def add_offer(store, name, price, need, amount, unit):
+        pg.click('[data-tab="okazje"]'); pg.click('[data-act="newoffer"]'); pg.wait_for_selector('.sheet .o-name')
+        pg.click(f'.sheet [data-s="{store}"]'); pg.fill('.o-name', name); pg.click('.sheet [data-mode="bundle"]')
+        pg.fill('.o-need', str(need)); pg.fill('.o-price', price); pg.fill('.o-amount', amount); pg.select_option('.o-unit', unit)
+        return pg.inner_text('#prev')
+    add_offer('Lidl', 'Coca-Cola', '9,99', 3, '1,5', 'l'); pg.screenshot(path=f'{OUT}/08b-edytor-promocji.png')
+    check('2,22' in pg.inner_text('#prev') and '3,33' in pg.inner_text('#prev'), 'Lidl: 2,22 zł/l i 3,33 zł za butelkę')
+    pg.click('[data-oa="save"]'); pg.wait_for_selector('.sheet', state='detached')
+    prev = add_offer('Kaufland', 'Coca-Cola', '13,98', 2, '2', 'l')
+    check('3,50' in prev and '2. z 2' in prev and 'najtaniej Lidl' in prev, 'Kaufland: 3,50 zł/l, 2. z 2, najtaniej Lidl')
+    pg.click('[data-oa="save"]'); pg.wait_for_selector('.sheet', state='detached')
+    pg.click('[data-act="omode"][data-m="porownanie"]'); pg.wait_for_selector('.cmp')
+    rows = pg.locator('.cmp-row'); check(rows.count() == 2, 'porównanie: dwa wiersze')
+    check('Lidl' in rows.nth(0).inner_text() and '2,22' in rows.nth(0).inner_text(), 'porównanie: Lidl pierwszy')
+    check('+58%' in rows.nth(1).inner_text(), 'porównanie: Kaufland +58%')
+    pg.screenshot(path=f'{OUT}/08c-porownanie.png', full_page=True)
+    pg.click('[data-act="omode"][data-m="lista"]')
+
     pg.click('[data-tab="budzet"]'); pg.fill('#limit', '3000'); pg.click('[data-act="savelimit"]')
     pg.click('[data-act="catlimit"][data-c="mieso"]'); pg.fill('#cl', '60'); pg.click('[data-cl="save"]')
     pg.screenshot(path=f'{OUT}/09-budzet.png', full_page=True)
@@ -75,11 +94,11 @@ try:
     check('zostało' in pg.inner_text('.tape .of'), 'limit: zostało …')
 
     pg.click('[data-tab="ustawienia"]')
-    check('0.1.2' in pg.inner_text('#view'), 'ustawienia pokazują wersję')
+    check('0.2.0' in pg.inner_text('#view'), 'ustawienia pokazują wersję')
     pg.fill('#gkey', 'TEST-KEY'); pg.fill('#gmodel', 'gemini-2.5-flash'); pg.click('[data-act="savegem"]'); pg.wait_for_function("document.getElementById('view').innerText.includes('Zapisany ✓')")
     check('Zapisany' in pg.inner_text('#view'), 'klucz zapisany')
     pg.click('[data-act="upd"]'); pg.wait_for_function("document.getElementById('upd-status').textContent.includes('najnowsz')", timeout=8000)
-    check(pg.inner_text('#upd-latest') == '0.1.2', 'najnowsza wersja z serwera = 0.1.2')
+    check(pg.inner_text('#upd-latest') == '0.2.0', 'najnowsza wersja z serwera = 0.1.2')
     pg.screenshot(path=f'{OUT}/09b-ustawienia.png', full_page=True)
     pg.click('[data-tab="start"]')
 
@@ -88,6 +107,18 @@ try:
     ctx.set_offline(True); pg.reload(); pg.wait_for_selector('.tape'); check(True, 'działa offline po przeładowaniu'); ctx.set_offline(False)
     # trwałość danych
     pg.reload(); pg.wait_for_selector('.tape'); check('73,77' in pg.inner_text('.tape .big').replace(' ', ' '), 'dane zostają po przeładowaniu')
+
+    # tablet i laptop (te same dane): sprawdzenie układu bez poziomego przewijania
+    for name, (w, h) in {'tablet': (820, 1180), 'laptop': (1366, 800)}.items():
+        pg.set_viewport_size({'width': w, 'height': h})
+        for tab in ['start', 'paragony', 'cennik', 'okazje', 'budzet', 'ustawienia']:
+            pg.click(f'[data-tab="{tab}"]'); pg.wait_for_timeout(120)
+            if tab == 'okazje': pg.click('[data-act="omode"][data-m="porownanie"]'); pg.wait_for_timeout(80)
+            pg.screenshot(path=f'{OUT}/r-{name}-{tab}.png')
+            ov = pg.evaluate('document.documentElement.scrollWidth - innerWidth')
+            check(ov <= 0, f'{name}/{tab}: brak poziomego przewijania ({ov})')
+        pg.click('[data-tab="paragony"]'); pg.click('[data-act="new"]'); pg.wait_for_selector('.sheet .f-name'); pg.screenshot(path=f'{OUT}/r-{name}-edytor.png'); pg.click('[data-close]')
+    pg.set_viewport_size({'width': 390, 'height': 844})
 
     # ciemny motyw
     ctx2 = b.new_context(viewport={'width': 390, 'height': 844}, device_scale_factor=2, color_scheme='dark', locale='pl-PL')
