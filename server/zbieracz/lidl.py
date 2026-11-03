@@ -49,7 +49,8 @@ def get_flyer(ctx, slug):
 
 def map_item(it, valid_from, valid_to, section=''):
     """Jedna pozycja dosłownego odczytu -> oferta (albo None). Cała arytmetyka i kontrola jest w normalize.interpret."""
-    name = ' '.join(x for x in [(it.get('marka') or '').strip(), (it.get('nazwa') or '').strip()] if x)
+    brand, nazwa = (it.get('marka') or '').strip(), (it.get('nazwa') or '').strip()
+    name = nazwa if brand and nazwa.lower().startswith(brand.lower()) else ' '.join(x for x in [brand, nazwa] if x)
     if not name:
         return None
     pack_t, extra, unit_t = [str(it.get(k) or '').strip() for k in ('opakowanie', 'cena_dodatkowa', 'cena_jednostkowa')]
@@ -97,7 +98,8 @@ def collect(page, ctx, key, cache_dir, max_pages=140, only=DEFAULT_ONLY, log=pri
             img = p.get('image')
             if not img:
                 continue
-            ck = os.path.join(cache_dir, hashlib.sha1((slug + '|' + img + '|v3').encode()).hexdigest() + '.json')
+            # bez adresu obrazu: ten sam adres strony potrafi się zmienić i wtedy całą gazetkę czytalibyśmy od nowa
+            ck = os.path.join(cache_dir, hashlib.sha1(f"{slug}|{p.get('number')}|v3".encode()).hexdigest() + '.json')
             if os.path.exists(ck):
                 with open(ck, encoding='utf-8') as f:
                     items_by_page[p.get('number')] = json.load(f)
@@ -128,8 +130,9 @@ def collect(page, ctx, key, cache_dir, max_pages=140, only=DEFAULT_ONLY, log=pri
                 fails += 1
                 warns.append(f'Lidl {slug} str. {[c[0] for c in chunk]}: {e}')
                 log(f'Lidl {slug} str. {[c[0] for c in chunk]}: BŁĄD {e}')
-                if fails >= 5:
-                    raise
+                if fails >= 5:  # przeciążenie po stronie Google: kończymy tę turę, zachowując to, co już przeczytane
+                    warns.append('Lidl: za dużo błędów Gemini; reszta stron zostanie doczytana przy następnym uruchomieniu')
+                    break
                 continue
             got = {int(x.get('numer')): x.get('oferty') or [] for x in (res.get('strony') or []) if isinstance(x, dict) and str(x.get('numer', '')).isdigit()}
             for idx, (num, ck) in enumerate(chunk, 1):

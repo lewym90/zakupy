@@ -49,6 +49,25 @@ class Zlote(unittest.TestCase):
         self.assertIn('Lidl Plus', o['cond'])
 
 
+class PrawdziwyOdczyt(unittest.TestCase):
+    """Dokładnie tak Gemini przepisało te oferty z gazetki kw45."""
+
+    def test_2_plus_1_cena_jednostkowa_w_polu_dodatkowym(self):
+        o = m(nazwa='Pepsi Zero, Mirinda, 7UP', opakowanie='2 L', cena='10,15', cena_dodatkowa='Cena poza promocją: 10,15/but., 1 L = 5,08', kaucja='kaucja 0,50 zł', promocja='2 + 1 gratis')
+        self.assertEqual((o['conf'], o['need'], o['pay'], o['price']), ('ok', 3, 2, 2030))
+        self.assertAlmostEqual(up(o), 338, delta=1)
+
+    def test_8_plus_4_gratis(self):
+        o = m(nazwa='Żywiec Jasne Pełne', opakowanie='500 ml', cena='4,39', cena_dodatkowa='Cena poza promocją: 4,39/pusz., 1 L = 8,78', promocja='8 + 4 gratis')
+        self.assertEqual((o['conf'], o['need'], o['pay'], o['price']), ('ok', 12, 8, 3512))
+
+    def test_warianty_nadal_nie_sa_kotwica(self):
+        self.assertIsNone(parse_anchor('1 kg = 31,96/34,74'))
+
+    def test_marka_nie_dubluje_sie(self):
+        self.assertEqual(m(marka='Pepsi', nazwa='Pepsi Zero', opakowanie='2 L', cena='5,00', cena_jednostkowa='1 L = 2,50')['name'], 'Pepsi Zero')
+
+
 class PomylkiModelu(unittest.TestCase):
     """Te same oferty, ale model przepisał je gorzej. Wynik ma być poprawny albo oznaczony jako niepewny, nigdy błędny i pewny."""
 

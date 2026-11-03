@@ -111,6 +111,12 @@ class Reader:
                         self.model = nxt; self.tried.add(nxt)
                         continue
                     raise DailyQuota(e.status, str(e))  # nie ma już modelu z wolnym limitem
+                if e.status == 503 and attempt >= 1:  # model przeciążony: inny model zamiast czekania
+                    nxt = self._next_model()
+                    if nxt:
+                        print(f'Gemini: model {self.model} przeciążony; przechodzę na {nxt}.', flush=True)
+                        self.model = nxt; self.tried.add(nxt)
+                        continue
                 if e.status in (0, 429, 500, 503) and attempt < 3:
                     time.sleep(65 if e.status == 429 else 25 * (attempt + 1))
                     continue

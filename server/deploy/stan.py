@@ -20,3 +20,6 @@ for n, v in collections.Counter(re.sub(r'[0-9.,]+', '#', o.get('note', ''))[:60]
     print(f'  {v} {n}')
 for o in [o for o in L if P.search(o['name'])][:12]:
     print(o['conf'], o['name'][:30], f"{o['need']}x{o['amount']}{o['unit']}", o['price'], o.get('promo', ''), 'str', o.get('page'), '|', o.get('printed', '')[:50])
+print('przykłady niepewnych:')
+for o in [o for o in L if o['conf'] == 'check'][:10]:
+    print(' ', o['name'][:26], o['price'], 'str', o.get('page'), '|', o.get('printed', '')[:62])

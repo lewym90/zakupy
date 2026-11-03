@@ -211,8 +211,8 @@ def parse_anchor(text):
     if m and re.search(r'/\s*\d*\s*(kg|g|ml|l|szt)\b', t):
         price, n, u = fnum(m.group(1)), fnum(m.group(2)) if m.group(2) else 1.0, m.group(3)
     else:
-        if '/' in t:
-            return None  # kilka wariantów
+        if re.search(r'\d\s*/\s*\d', t):
+            return None  # kilka wariantów (31,96/34,74); „10,15/but.” to zwykła cena sztuki
         m = re.search(NUM + r'?\s*(kg|g|ml|l|szt)\b\.?\s*=?\s*' + NUM, t)
         if not m:
             return None
