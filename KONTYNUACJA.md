@@ -1,6 +1,6 @@
 # KONTYNUACJA: Zakupy (prywatna aplikacja PWA do cen, ofert i budżetu)
 
-> Ten plik ma pozwolić nowemu Claude (na nowym koncie) przejąć pracę bez utraty kontekstu. Jest w PUBLICZNYM repozytorium, więc nie ma w nim żadnych kluczy, tokenów ani adresów prywatnego serwera. Stan na 2026-11-02, wersja aplikacji 0.6.0.
+> Ten plik ma pozwolić nowemu Claude (na nowym koncie) przejąć pracę bez utraty kontekstu. Jest w PUBLICZNYM repozytorium, więc nie ma w nim żadnych kluczy, tokenów ani adresów prywatnego serwera. Stan na 2026-11-02, wersja aplikacji 0.6.1.
 
 ## 0. Co zrobić jako pierwsze (nowy Claude)
 1. Przeczytaj cały ten plik, potem `README.md` i `server/README.md`. Nie zaczynaj od zera i nie przepisuj działających rzeczy bez powodu.

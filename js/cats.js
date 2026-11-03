@@ -14,7 +14,7 @@ export const CATS = [
   { id: 'mrozonki', n: 'Mrożonki i lody', k: ['mrozon', 'lody', 'lod$', 'pizza', 'frytki', 'pierogi', 'paluszki rybne', 'nuggets'] },
   { id: 'napoje', n: 'Napoje', k: ['woda', 'wody', 'sok$', 'soki$', 'cola', 'pepsi', 'napoj', 'lemoniad', 'nektar', 'izotonik', 'energet', 'oranzad', 'fanta', 'sprite', 'tonik', 'mleko ryzowe', 'kompot'] },
   { id: 'kawa', n: 'Kawa i herbata', k: ['kawa$', 'kawy$', 'kawe$', 'herbata$', 'herbaty$', 'herbatka$', 'herbatki$', 'kakao', 'nescafe', 'cappuccino', 'espresso', 'lavazza', 'tchibo', 'jacobs', 'melitta', 'ziarnist'] },
-  { id: 'alkohol', n: 'Alkohol', k: ['piwo', 'wino', 'wodka', 'whisky', 'rum$', 'gin$', 'likier', 'cydr', 'prosecco', 'szampan', 'nalewk', 'koniak', 'brandy'] },
+  { id: 'alkohol', n: 'Alkohol', k: ['piwo', 'pilsner', 'lager', 'tyskie', 'okocim', 'warka', 'lech$', 'kozel', 'harnas', 'zywiec jasne', 'zywiec biale', 'wino', 'wodka', 'whisky', 'rum$', 'gin$', 'likier', 'cydr', 'prosecco', 'szampan', 'nalewk', 'koniak', 'brandy'] },
   { id: 'slodycze', n: 'Słodycze i przekąski', k: ['czekolad', 'baton', 'chips', 'ciastk', 'paluszk', 'cukierk', 'wafel', 'wafle', 'zelk', 'orzeszk', 'chrupki', 'lizak', 'delicj', 'pralin', 'snickers', 'prince polo', 'krakers', 'popcorn', 'ciasto', 'sernik', 'orzech', 'migdal', 'rodzynk', 'zurawin', 'daktyl', 'nerkow', 'pistacj', 'bakali', 'herbatnik', 'pierni', 'mieszanka studencka', 'suszone sliwk', 'sliwki suszone'] },
   { id: 'spizarnia', n: 'Spiżarnia', k: ['makaron', 'ryz$', 'maka$', 'mak$', 'cukier', 'olej', 'oliwa', 'kasza', 'platki', 'sol$', 'przypraw', 'ocet', 'keczup', 'majonez', 'musztard', 'konserw', 'fasol', 'groch', 'dzem', 'miod', 'sos$', 'sosy$', 'zupa', 'buljon', 'kukurydz', 'ciecierzyc', 'soczewic', 'musli', 'przecier', 'koncentrat', 'drozdze', 'proszek do pieczenia', 'galaretk', 'tortilla', 'ryzowe', 'pestk', 'sezam', 'siemie', 'danie gotowe', 'mieszanka do wypiek'] },
   { id: 'chemia', n: 'Chemia i higiena', k: ['plyn', 'proszek', 'papier', 'mydl', 'szampon', 'pasta do zeb', 'zel pod', 'recznik', 'chusteczk', 'worki', 'gabka', 'kapsulk', 'odplamiacz', 'dezodorant', 'higien', 'podpask', 'pieluch', 'tabletk', 'plyn do', 'folia', 'torebki', 'ręcznik', 'szczoteczk', 'krem$', 'balsam', 'odzywk', 'wacik', 'patyczk', 'baterie', 'zarowk', 'swiec', 'golen', 'maszynk', 'wklady$', 'farba', 'odswiezacz', 'mleczko', 'perfum', 'pomadk', 'tampon', 'antyperspirant', 'zel$', 'plukank', 'czyszcz', 'spray'] },
@@ -59,6 +59,20 @@ export function catOf(name) {
   }
   for (let i = head; i < toks.length; i++) { const id = matchAt(toks, i); if (id) return id; }
   return toks.some(t => GENERIC_MEAT.has(t)) ? 'mieso' : 'inne';
+}
+
+// Działy Kauflandu: sklep sam dzieli oferty, więc to pewniejsze niż nazwa. [kategoria domyślna, inne dozwolone w tym dziale].
+// Działy promocyjne (Hity tygodnia, Mocny Start...) nic nie mówią o produkcie, więc tam decyduje nazwa.
+const SECTIONS = {
+  'Napoje': ['napoje', 'alkohol'], 'Nabiał': ['nabial'], 'Świeże ryby': ['ryby'], 'Mrożonki': ['mrozonki'],
+  'Drogeria i Chemia gospodarcza': ['chemia', 'zwierzeta'], 'Kosmetyki, Chemia': ['chemia'],
+  'Mięso, Drób, Wędliny': ['mieso', 'wedliny'], 'Kawa, Herbata, Słodycze, Przekąski': ['slodycze', 'kawa'],
+  'Garmażeria, Konserwy': ['spizarnia', 'ryby', 'mieso', 'wedliny', 'warzywa'],
+  'ABC każdej kuchni': ['spizarnia', 'slodycze', 'kawa', 'warzywa'],
+};
+export function catOfOffer(name, section) {
+  const c = catOf(name), s = SECTIONS[section];
+  return !s || s.includes(c) ? c : s[0];
 }
 
 export const STORES = ['Biedronka', 'Lidl', 'Kaufland', 'Auchan', 'Carrefour', 'Netto', 'Dino', 'Stokrotka', 'Żabka', 'Inny'];

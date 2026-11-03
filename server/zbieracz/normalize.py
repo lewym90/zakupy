@@ -319,8 +319,8 @@ def interpret(name, pack_text, price, extra='', unit_text='', deposit='', promo=
             hyp(1, q, big, mode='unit')
 
     chosen, note = None, ''
-    # 1 kg, 1 l, 100 g: gazetka nie drukuje osobnej ceny jednostkowej, bo jest nią sama cena i nie ma czego mnożyć
-    exact = count == 1 and not mb and not line and (unit, each) in {('kg', 1), ('l', 1), ('g', 1000), ('ml', 1000), ('g', 100), ('ml', 100)}
+    # 1 kg, 1 l, 100 g, 1 szt.: gazetka nie drukuje osobnej ceny jednostkowej, bo jest nią sama cena i nie ma czego mnożyć
+    exact = count == 1 and not line and (unit, each) in {('kg', 1), ('l', 1), ('g', 1000), ('ml', 1000), ('g', 100), ('ml', 100), ('szt', 1)}
     regular_note = re.search(r'przed obniżką|poza promocją', f'{extra} {unit_text}', re.I)
     if not anchor and not mb and (variants_match(big, pack_text, unit_text) or variants_match(big, pack_text, extra)):
         return dict(amount=q, unit=unit, price=big, mode='unit', need=1, conf='cena', note='kilka wariantów wielkości w tej samej cenie, więc cena za jednostkę zależy od wariantu', deposit=dep, promo='')
@@ -328,7 +328,7 @@ def interpret(name, pack_text, price, extra='', unit_text='', deposit='', promo=
         note = parts['note']
     elif anchor and anchor['base'] == base:
         chosen = next((h for h in hyps if any(_near(v, anchor['up']) for v in h['tests'])), None)
-        if not chosen and exact and regular_note and big < anchor['up']:  # wydrukowana cena jednostkowa to cena sprzed obniżki
+        if not chosen and exact and not mb and regular_note and big < anchor['up']:  # wydrukowana cena jednostkowa to cena sprzed obniżki
             chosen = hyps[0]
         if not chosen:
             note = f"cena za jednostkę wg sklepu {anchor['up'] / 100:.2f}, odczyt jej nie potwierdza"

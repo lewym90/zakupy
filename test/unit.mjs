@@ -142,5 +142,14 @@ eq(effectiveModel('gemini-2.5-flash'), DEFAULT_MODEL, 'wycofany model => domyśl
   eq([p.planned, p.free, p.left, p.perDay], [50000, 130000, 10, 13000], 'plan: zrobione się nie liczy, dzień dzisiejszy tak');
   eq(planSummary({ limit: 1000, spent: 5000, plan: [], day: 1, days: 30 }).perDay, 0, 'plan: bez ujemnej kwoty na dzień');
 }
+{
+  const eq = (a, b, m) => { if (JSON.stringify(a) !== JSON.stringify(b)) { bad++; console.log('FAIL', m, JSON.stringify(a), '!=', JSON.stringify(b)); } };
+  const { catOfOffer } = await import('../js/cats.js');
+  eq(catOfOffer('Ambi Pur Elegance', 'Drogeria i Chemia gospodarcza'), 'chemia', 'dział wygrywa z nieznaną nazwą');
+  eq(catOfOffer('Whiskas dla kota', 'Drogeria i Chemia gospodarcza'), 'zwierzeta', 'dozwolona kategoria w dziale');
+  eq(catOfOffer('Pilsner Urquell', 'Napoje'), 'alkohol', 'piwo w dziale Napoje');
+  eq(catOfOffer('Szynka', 'Mięso, Drób, Wędliny'), 'wedliny', 'dział łączony: decyduje nazwa');
+  eq(catOfOffer('Tymbark sok', 'Hity tygodnia'), 'napoje', 'dział promocyjny nic nie mówi');
+}
 console.log(bad ? bad + ' błędów' : 'unit OK');
 process.exit(bad ? 1 : 0);

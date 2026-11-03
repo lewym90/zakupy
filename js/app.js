@@ -1,5 +1,5 @@
 import { all, put, del, clear, kvGet, kvSet } from './db.js';
-import { CATS, catOf, catById, STORES } from './cats.js';
+import { CATS, catOf, catOfOffer, catById, STORES } from './cats.js';
 import { esc, zl, zlShort, parseMoney, parseNum, centsToInput, norm, uid, todayISO, ymOf, monthName, monthShort, addMonth, daysInMonth, fmtDate } from './util.js';
 import { products, matchProduct, verdict, monthStats, monthTotals, receiptTotal, lineSum } from './calc.js';
 import { readReceipt, DEFAULT_MODEL, effectiveModel, listModels, pickFlash } from './gemini.js';
@@ -8,7 +8,7 @@ import { matchOffers, basket, pantryLow, planSummary } from './plan.js';
 import { ic } from './icons.js';
 import { offerCalc, compareGroups, familyOf, offerLabel, UNITS, packLabel, unitPrice, promoLabel, whereLabel, isMulti, isSure, isHidden, flyerUrl } from './offers.js';
 
-const VERSION = '0.6.0';
+const VERSION = '0.6.1';
 const LISTS = ['lista', 'stale', 'chce', 'spiz'];
 const NOW_YM = () => todayISO().slice(0, 7);
 const S = { receipts: [], offers: [], kv: {}, tab: 'start', omode: 'lista', ym: NOW_YM(), q: '', cat: '', ocat: '', lastStore: 'Biedronka', srv: null, oq: '', ounsure: false, lstore: '', lmode: 'zakupy' };
@@ -159,10 +159,10 @@ const prods = () => S._p || (S._p = products(S.receipts));
 function offerVerdict(o) { const c = offerCalc(o); return verdict(c.up, c.base, matchProduct(prods(), o.name)); }
 // Oferty własne + oferty z serwera (tylko do odczytu, id z prefiksem "s:")
 let _ao = { m: null, s: null, f: null, v: [] };
-const offerCat = name => S.kv.catFix[norm(name)] || catOf(name); // ręczna poprawka właściciela ma pierwszeństwo
+const offerCat = o => S.kv.catFix[norm(o.name)] || catOfOffer(o.name, o.section); // ręczna poprawka właściciela ma pierwszeństwo
 function allOffers() {
   const sv = S.srv && S.srv.data && Array.isArray(S.srv.data.offers) ? S.srv.data.offers : null;
-  if (_ao.m !== S.offers || _ao.s !== sv || _ao.f !== S.kv.catFix) _ao = { m: S.offers, s: sv, f: S.kv.catFix, v: [...S.offers, ...(sv || []).map(o => ({ ...o, id: 's:' + o.id, cat: offerCat(o.name), srv: true }))] };
+  if (_ao.m !== S.offers || _ao.s !== sv || _ao.f !== S.kv.catFix) _ao = { m: S.offers, s: sv, f: S.kv.catFix, v: [...S.offers, ...(sv || []).map(o => ({ ...o, id: 's:' + o.id, cat: offerCat(o), srv: true }))] };
   return _ao.v;
 }
 const normQ = t => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ł/g, 'l');

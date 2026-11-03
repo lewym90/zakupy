@@ -68,6 +68,11 @@ class PrawdziwyOdczyt(unittest.TestCase):
         self.assertEqual(m(nazwa='X', opakowanie='150 g', cena='8,99')['conf'], 'check')  # inna wielkość nadal wymaga potwierdzenia
         self.assertEqual(m(nazwa='X', opakowanie='2 L', cena='8,99')['conf'], 'check')
 
+    def test_pelne_opakowanie_z_promocja(self):
+        o = m(nazwa='Fin Carré Czekolada', opakowanie='100 g', cena='4,49', cena_dodatkowa='Cena poza promocją: 4,49/opak.', promocja='3 za 2')
+        self.assertEqual((o['conf'], o['need'], o['pay'], o['price']), ('ok', 3, 2, 898))
+        self.assertEqual(m(nazwa='Ogórek', opakowanie='1 szt.', cena='2,39')['conf'], 'ok')
+
     def test_cena_jednostkowa_sprzed_obnizki(self):
         o = m(nazwa='Cytryny, luzem', opakowanie='1 kg', cena='4,99', cena_dodatkowa='* cena przed obniżką: 1 kg = 11,99', cena_jednostkowa='1 kg = 11,99')
         self.assertEqual((o['conf'], up(o)), ('ok', 499))
