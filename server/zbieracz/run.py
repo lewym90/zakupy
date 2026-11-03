@@ -54,7 +54,7 @@ def main():
                 if name == 'Lidl':  # niedoczytane strony zostają z poprzedniego odczytu, zamiast znikać
                     read = {(o['section'], o.get('page')) for o in offers}
                     offers += [o for o in prev.get('offers', []) if o['store'] == 'Lidl' and 'printed' in o and o['until'] >= today.isoformat() and (o['section'], o.get('page')) not in read]
-                stores[name] = {'ok': True, 'at': now, 'count': len(offers), 'check': sum(1 for o in offers if o['conf'] != 'ok'), 'msg': '; '.join(warns[:5])}
+                stores[name] = {'ok': True, 'at': now, 'count': len(offers), 'check': sum(1 for o in offers if o['conf'] == 'check'), 'msg': '; '.join(warns[:5])}
                 all_offers += offers
                 log(name, 'ofert:', len(offers), 'do sprawdzenia:', stores[name]['check'])
             except Exception as e:  # noqa: BLE001

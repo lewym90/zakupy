@@ -21,5 +21,9 @@ for n, v in collections.Counter(re.sub(r'[0-9.,]+', '#', o.get('note', ''))[:60]
 for o in [o for o in L if P.search(o['name'])][:12]:
     print(o['conf'], o['name'][:30], f"{o['need']}x{o['amount']}{o['unit']}", o['price'], o.get('promo', ''), 'str', o.get('page'), '|', o.get('printed', '')[:50])
 print('przykłady niepewnych:')
-for o in [o for o in L if o['conf'] == 'check'][:10]:
-    print(' ', o['name'][:26], o['price'], 'str', o.get('page'), '|', o.get('printed', '')[:62])
+for o in [o for o in L if o['conf'] == 'check' and 'wg sklepu' in o.get('note', '')][:7] + [o for o in L if o['conf'] == 'check' and 'brak' in o.get('note', '')][:5]:
+    print(' ', o['name'][:24], o['price'], '|', ' '.join(o.get('printed', '').split())[:64])
+K = [o for o in d['offers'] if o['store'] == 'Kaufland']
+print('Kaufland:', len(K), dict(collections.Counter(o['conf'] for o in K)))
+print('działy:', dict(collections.Counter(o['section'] for o in K).most_common(30)))
+print('notatki Pepsi:', [o.get('note', '')[:70] for o in L if o['conf'] == 'check' and P.search(o['name'])][:3])

@@ -61,6 +61,18 @@ class PrawdziwyOdczyt(unittest.TestCase):
         o = m(nazwa='Żywiec Jasne Pełne', opakowanie='500 ml', cena='4,39', cena_dodatkowa='Cena poza promocją: 4,39/pusz., 1 L = 8,78', promocja='8 + 4 gratis')
         self.assertEqual((o['conf'], o['need'], o['pay'], o['price']), ('ok', 12, 8, 3512))
 
+    def test_rowno_1_kg_lub_100_g_bez_ceny_jednostkowej(self):
+        for pack, cena, wynik in [('1 kg', '69,99', 6999), ('100 g', '8,99', 8990), ('1 L', '4,99', 499)]:
+            o = m(nazwa='X', opakowanie=pack, cena=cena)
+            self.assertEqual((o['conf'], up(o)), ('ok', wynik), pack)
+        self.assertEqual(m(nazwa='X', opakowanie='150 g', cena='8,99')['conf'], 'check')  # inna wielkość nadal wymaga potwierdzenia
+        self.assertEqual(m(nazwa='X', opakowanie='2 L', cena='8,99')['conf'], 'check')
+
+    def test_cena_jednostkowa_sprzed_obnizki(self):
+        o = m(nazwa='Cytryny, luzem', opakowanie='1 kg', cena='4,99', cena_dodatkowa='* cena przed obniżką: 1 kg = 11,99', cena_jednostkowa='1 kg = 11,99')
+        self.assertEqual((o['conf'], up(o)), ('ok', 499))
+        self.assertEqual(m(nazwa='X', opakowanie='1 kg', cena='4,99', cena_jednostkowa='1 kg = 11,99')['conf'], 'check')  # bez takiego napisu to niezgodność
+
     def test_przypis_ze_skosnikiem_nie_psuje_ceny(self):
         o = m(nazwa='Alpro Napój', opakowanie='750 ml', cena='7,99', cena_jednostkowa='1 L = 10,65\n* najniższa cena\nz 30 dni przed obniżką/')
         self.assertEqual((o['conf'], up(o)), ('ok', 1065))

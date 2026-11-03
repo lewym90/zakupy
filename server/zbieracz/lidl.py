@@ -153,4 +153,6 @@ def collect(page, ctx, key, cache_dir, max_pages=140, only=DEFAULT_ONLY, log=pri
                 if o:
                     o['page'] = num
                     offers.append(o)
-    return offers, warns
+    # ta sama oferta bywa w gazetce dwa razy: gdy jedno miejsce jest potwierdzone, niepewny duplikat nie jest potrzebny
+    sure = {o['name'] for o in offers if o['conf'] == 'ok'}
+    return [o for o in offers if o['conf'] != 'check' or o['name'] not in sure], warns
