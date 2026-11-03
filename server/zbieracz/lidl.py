@@ -100,6 +100,9 @@ def collect(page, ctx, key, cache_dir, max_pages=140, only=DEFAULT_ONLY, log=pri
                 continue
             # bez adresu obrazu: ten sam adres strony potrafi się zmienić i wtedy całą gazetkę czytalibyśmy od nowa
             ck = os.path.join(cache_dir, hashlib.sha1(f"{slug}|{p.get('number')}|v3".encode()).hexdigest() + '.json')
+            old = os.path.join(cache_dir, hashlib.sha1((slug + '|' + img + '|v3').encode()).hexdigest() + '.json')  # wcześniejszy klucz
+            if not os.path.exists(ck) and os.path.exists(old):
+                ck = old
             if os.path.exists(ck):
                 with open(ck, encoding='utf-8') as f:
                     items_by_page[p.get('number')] = json.load(f)

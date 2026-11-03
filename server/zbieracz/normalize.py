@@ -211,7 +211,7 @@ def parse_anchor(text):
     if m and re.search(r'/\s*\d*\s*(kg|g|ml|l|szt)\b', t):
         price, n, u = fnum(m.group(1)), fnum(m.group(2)) if m.group(2) else 1.0, m.group(3)
     else:
-        if re.search(r'\d\s*/\s*\d', t):
+        if re.search(r'\d\s*/\s*\d|\d[.,]\d{2}\s*-\s*\d', t):
             return None  # kilka wariantów (31,96/34,74); „10,15/but.” to zwykła cena sztuki
         m = re.search(NUM + r'?\s*(kg|g|ml|l|szt)\b\.?\s*=?\s*' + NUM, t)
         if not m:
@@ -219,6 +219,23 @@ def parse_anchor(text):
         n, u, price = fnum(m.group(1)) if m.group(1) else 1.0, m.group(2), fnum(m.group(3))
     b, f = TO_BASE[u]
     return dict(base=b, up=price * 100 / (n * f), deposit=deposit)
+
+
+def variants_match(price, pack_text, unit_text):
+    """Kilka wielkości w jednej cenie: '50 g, 55 g' i '100 g = 13,98/12,71'. Prawda, gdy wydrukowana cena zgadza się z którąś wielkością."""
+    t = _KAUCJA_RE.sub(' ', (unit_text or '').lower().replace('zł', ' '))
+    m = re.search(NUM + r'?\s*(kg|g|ml|l|szt)\b\.?\s*=?\s*(\d+[.,]\d{2}(?:\s*[/-]\s*\d+[.,]\d{2})+)', t)
+    if not m:
+        return False
+    n, u = fnum(m.group(1)) if m.group(1) else 1.0, m.group(2)
+    b, f = TO_BASE[u]
+    ups = [fnum(x) * 100 / (n * f) for x in re.findall(r'\d+[.,]\d{2}', m.group(3))]
+    sizes = []
+    for a, a2, un in re.findall(NUM + r'(?:\s*[/-]\s*' + NUM + r')?\s*(kg|g|ml|l|szt)\b', (pack_text or '').lower()):
+        for x in (a, a2):
+            if x and TO_BASE[un][0] == b:
+                sizes.append(fnum(x) * TO_BASE[un][1])
+    return any(_near(price / s, up) for s in sizes for up in ups if s)
 
 
 def _prices(text):
@@ -302,6 +319,8 @@ def interpret(name, pack_text, price, extra='', unit_text='', deposit='', promo=
             hyp(1, q, big, mode='unit')
 
     chosen, note = None, ''
+    if not anchor and not mb and (variants_match(big, pack_text, unit_text) or variants_match(big, pack_text, extra)):
+        return dict(amount=q, unit=unit, price=big, mode='unit', need=1, conf='cena', note='kilka wariantów wielkości w tej samej cenie, więc cena za jednostkę zależy od wariantu', deposit=dep, promo='')
     if parts['conf'] != 'ok':
         note = parts['note']
     elif anchor and anchor['base'] == base:

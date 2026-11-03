@@ -61,6 +61,18 @@ class PrawdziwyOdczyt(unittest.TestCase):
         o = m(nazwa='Żywiec Jasne Pełne', opakowanie='500 ml', cena='4,39', cena_dodatkowa='Cena poza promocją: 4,39/pusz., 1 L = 8,78', promocja='8 + 4 gratis')
         self.assertEqual((o['conf'], o['need'], o['pay'], o['price']), ('ok', 12, 8, 3512))
 
+    def test_przypis_ze_skosnikiem_nie_psuje_ceny(self):
+        o = m(nazwa='Alpro Napój', opakowanie='750 ml', cena='7,99', cena_jednostkowa='1 L = 10,65\n* najniższa cena\nz 30 dni przed obniżką/')
+        self.assertEqual((o['conf'], up(o)), ('ok', 1065))
+
+    def test_warianty_wielkosci_potwierdzone_cena(self):
+        for pack, unit, cena in [('50 g, 55 g', '100 g = 13,98/12,71', '6,99'), ('90 g, 100 g', '100 g = 9,99/8,99', '8,99'), ('15-18 g', '100 g = 59,93-49,94', '8,99'), ('15 szt., 20 szt.', '1 szt. = 0,33/0,25', '4,99')]:
+            self.assertEqual(m(nazwa='X', opakowanie=pack, cena=cena, cena_jednostkowa=unit)['conf'], 'cena', pack)
+        self.assertEqual(m(nazwa='X', opakowanie='50 g, 55 g', cena='3,00', cena_jednostkowa='100 g = 13,98/12,71')['conf'], 'check')
+
+    def test_cena_jednostkowa_sasiedniej_oferty_nie_przechodzi(self):
+        self.assertEqual(m(nazwa='Orzechy', opakowanie='150 g', cena='17,49', cena_jednostkowa='100 g = 5,33')['conf'], 'check')
+
     def test_warianty_nadal_nie_sa_kotwica(self):
         self.assertIsNone(parse_anchor('1 kg = 31,96/34,74'))
 

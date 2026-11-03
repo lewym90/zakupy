@@ -169,6 +169,21 @@ class Promocje(unittest.TestCase):
 
 
 class Czas(unittest.TestCase):
+    def test_wiele_zmian_modelu_nie_konczy_sie_pustym_wynikiem(self):
+        import gemini
+        r = gemini.Reader('K', pause=0)
+        names = iter(['m2', 'm3', 'm4', 'm5', 'm6'])
+        r._next_model = lambda: next(names, None)
+        calls = []
+        def call(*a):
+            calls.append(r.model)
+            if r.model == 'm6':
+                return {'candidates': [{'content': {'parts': [{'text': '{"ok":1}'}]}}]}
+            raise gemini.GeminiError(429, 'quota RequestsPerDay')
+        r._call = call
+        self.assertEqual(r.read_json(b'x', 'p'), {'ok': 1})  # dawniej po czterech zmianach wynikiem było None
+        self.assertEqual(len(calls), 6)
+
     def test_odpowiedz_null_to_blad_a_nie_awaria(self):
         import gemini
         r = gemini.Reader('K', pause=0)

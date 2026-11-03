@@ -85,7 +85,9 @@ class Reader:
         wait = self.pause - (time.time() - self._last)
         if wait > 0:
             time.sleep(wait)
-        for attempt in range(4):
+        attempt = -1
+        while attempt < 3:  # zmiana modelu nie zużywa prób, a modeli jest skończona liczba (self.tried)
+            attempt += 1
             try:
                 try:
                     j = self._call(image_bytes, prompt)
@@ -108,14 +110,14 @@ class Reader:
                     nxt = self._next_model()
                     if nxt:
                         print(f'Gemini: dzienny limit modelu {self.model}; przechodzę na {nxt}. ({str(e)[:300]})', flush=True)
-                        self.model = nxt; self.tried.add(nxt)
+                        self.model = nxt; self.tried.add(nxt); attempt -= 1
                         continue
                     raise DailyQuota(e.status, str(e))  # nie ma już modelu z wolnym limitem
                 if e.status == 503 and attempt >= 1:  # model przeciążony: inny model zamiast czekania
                     nxt = self._next_model()
                     if nxt:
                         print(f'Gemini: model {self.model} przeciążony; przechodzę na {nxt}.', flush=True)
-                        self.model = nxt; self.tried.add(nxt)
+                        self.model = nxt; self.tried.add(nxt); attempt -= 1
                         continue
                 if e.status in (0, 429, 500, 503) and attempt < 3:
                     time.sleep(65 if e.status == 429 else 25 * (attempt + 1))
@@ -125,3 +127,4 @@ class Reader:
                 if attempt < 1:
                     continue
                 raise GeminiError(0, f'Odpowiedź modelu {self.model} nie jest poprawnym JSON-em: {str(e)[:220]}')
+        raise GeminiError(0, 'Gemini nie dało odpowiedzi mimo ponawiania.')
