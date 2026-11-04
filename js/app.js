@@ -6,10 +6,10 @@ import { readReceipt, DEFAULT_MODEL, effectiveModel, listModels, pickFlash } fro
 import { itemFromOffer, manualItem, byStore } from './lista.js';
 import { matchOffers, basket, pantryLow, planSummary } from './plan.js';
 import { ic } from './icons.js';
-import { SPRITE, COLS, slotOf } from './thumbs.js';
+import { COLS, CELLS, slotOf, thumbInfo } from './thumbs.js';
 import { offerCalc, compareGroups, familyOf, offerLabel, UNITS, packLabel, unitPrice, promoLabel, whereLabel, isMulti, isSure, isHidden, flyerUrl, discountPct } from './offers.js';
 
-const VERSION = '0.7.1';
+const VERSION = '0.8.0';
 const LISTS = ['lista', 'stale', 'chce', 'spiz'];
 const NOW_YM = () => todayISO().slice(0, 7);
 const S = { receipts: [], offers: [], kv: {}, tab: 'start', omode: 'lista', ym: NOW_YM(), q: '', cat: '', ocat: '', lastStore: 'Biedronka', srv: null, oq: '', ounsure: false, lstore: '', lmode: 'zakupy', ostore: '', lshop: false };
@@ -82,9 +82,8 @@ const SCREENS = { start, paragony, cennik, okazje, lista, budzet, ustawienia, sp
 
 const pr = (g, tag) => `<span class="pr${tag ? ' tagp' : ''}">${zl(g)}</span>`;
 const thumb = o => {
-  if (!SPRITE) return `<span class="th">${ic(o.cat || catOf(o.name))}</span>`;
-  const i = slotOf(o.name, o.cat), step = 100 / (COLS - 1);
-  return `<span class="th" style="background-image:url(img/produkty.webp);background-position:${(i % COLS) * step}% ${Math.floor(i / COLS) * step}%"></span>`;
+  const i = slotOf(o.name, o.cat), c = i % CELLS, step = 100 / (COLS - 1);
+  return `<span class="th" style="background-image:url(img/p${Math.floor(i / CELLS) + 1}.webp);background-position:${(c % COLS) * step}% ${Math.floor(c / COLS) * step}%"></span>`;
 };
 const storeMark = s => `<span class="sb ${esc(s)}" aria-hidden="true">${esc(s[0])}</span>`;
 function receiptItem(r) {
@@ -379,11 +378,17 @@ function srvStores() {
   const st = S.srv && S.srv.data && S.srv.data.stores; if (!st) return '';
   return Object.entries(st).map(([n, x]) => `<div class="kv"><span>${esc(n)}</span><b class="${x.ok ? 'down' : 'up'}">${x.ok ? (x.count != null ? x.count + ' ofert' : 'ok') : 'błąd'}</b></div>${!x.ok && x.msg ? `<p class="hint" style="margin:0 0 6px">${esc(x.msg)}</p>` : ''}`).join('');
 }
+function srvThumbs() {
+  const off = allOffers().filter(o => o.srv); if (!off.length) return '';
+  const miss = off.filter(o => !thumbInfo(o.name, o.cat).exact);
+  return `<h2>Zdjęcia ofert</h2><div class="card"><div class="kv"><span>Własne zdjęcie produktu</span><b>${off.length - miss.length} z ${off.length}</b></div>${miss.length ? `<p class="hint" id="thumbmiss" style="margin:8px 0 0;user-select:text">Grafika ogólna: ${esc(miss.slice(0, 60).map(o => o.name.slice(0, 28)).join('; '))}</p>` : ''}</div>`;
+}
 function ustawienia() {
   const key = S.kv.geminiKey || '';
   const n = S.receipts.length, nl = S.receipts.reduce((x, r) => x + r.lines.length, 0);
   return `<div class="head"><div><h1>Ustawienia</h1><p class="sub">Zakupy ${VERSION}</p></div></div>
     <h2>Wygląd</h2><div class="seg" role="group" aria-label="Motyw">${[['dark', 'Ciemny'], ['light', 'Jasny'], ['auto', 'Jak w telefonie']].map(([t, n]) => `<button aria-pressed="${(S.kv.theme || 'dark') === t}" data-act="theme" data-t="${t}">${n}</button>`).join('')}</div>
+    ${srvThumbs()}
     <h2>Aplikacja</h2><div class="card">
       <div class="kv"><span>Zainstalowana wersja</span><b>${VERSION}</b></div>
       <div class="kv"><span>Najnowsza na serwerze</span><b id="upd-latest">—</b></div>

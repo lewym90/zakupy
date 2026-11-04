@@ -157,12 +157,11 @@ eq(effectiveModel('gemini-2.5-flash'), DEFAULT_MODEL, 'wycofany model => domyśl
   eq(discountPct({ price: 2399, old: 3999 }), 40, 'rabat z ceny przed obniżką');
   eq(discountPct({ price: 2030, mode: 'bundle', need: 3, pay: 2 }), 33, '2 + 1 gratis to 33%');
   eq(discountPct({ price: 998, mode: 'bundle', need: 2 }), 0, 'bez danych nie ma rabatu');
-  const { slotOf, SLOTS, COLS } = await import('../js/thumbs.js');
-  eq(SLOTS.length, COLS * COLS, 'plansza 8 × 8');
-  const name = (n, c) => SLOTS[slotOf(n, c)][0];
-  eq(name('Coca-Cola Zero 2 l', 'napoje'), 'cola', 'cola'); eq(name('Masło extra', 'nabial'), 'maslo', 'masło'); eq(name('Migdały blanszowane', 'slodycze'), 'orzechy', 'migdały');
-  for (const [n, c, w] of [['Banany', 'warzywa', 'banan'], ['Karkówka wieprzowa', 'mieso', 'wieprzowina'], ['Filet z dorsza', 'ryby', 'ryba'], ['Papier toaletowy Almusso', 'chemia', 'papier'], ['Whiskas karma', 'zwierzeta', 'karma kot'], ['Kawa ziarnista', 'kawa', 'kawa'], ['Herbata czarna', 'kawa', 'herbata'], ['Masło orzechowe', 'spizarnia', 'orzechy'], ['Żywiec Zdrój woda', 'napoje', 'woda'], ['Chipsy o smaku papryki', 'slodycze', 'chipsy'], ['Pizza z szynką', 'mrozonki', 'pizza'], ['Karma z kurczakiem', 'zwierzeta', 'karma kot'], ['Ciastka z jabłkiem', 'slodycze', 'ciastka'], ['Woda micelarna', 'chemia', 'krem']]) eq(name(n, c), w, n);
-  eq(name('Coś nieznanego', 'nabial'), 'mleko', 'zapas: kategoria'); eq(name('Xyz', 'inne'), 'produkt', 'zapas: ogólny');
+  const { thumbInfo, SLOTS } = await import('../js/thumbs.js');
+  eq(SLOTS, 384, 'sześć plansz po 64 pola');
+  const cell = (n, c) => { const i = thumbInfo(n, c); return i.exact ? [Math.floor(i.i / 64) + 1, Math.floor((i.i % 64) / 8), i.i % 8] : 'zapas'; };
+  for (const [n, c, w] of [['Banany', 'warzywa', [1, 0, 0]], ['Kiwi Gold', 'warzywa', [2, 0, 0]], ['KANIA Majonez klasyczny z żółtkami', 'spizarnia', [5, 0, 0]], ['Kasztelan Jasne Pełne', 'alkohol', [4, 0, 0]], ['Kasztelan Niepasteryzowane', 'alkohol', [4, 0, 0]], ['Chipsy o smaku papryki', 'slodycze', [4, 5, 0]], ['Karma dla kota', 'zwierzeta', [6, 7, 0]], ['Krem do rąk', 'chemia', [6, 1, 4]], ['Płyn do naczyń', 'chemia', [6, 4, 4]], ['Pizza z szynką', 'mrozonki', [1, 3, 2]], ['Masło orzechowe', 'spizarnia', [3, 5, 5]], ['Woda micelarna', 'chemia', [6, 1, 6]], ['Filet z dorsza', 'ryby', [2, 6, 2]], ['Ogórek zielony', 'warzywa', [1, 0, 3]], ['Piersi z kurczaka', 'mieso', [1, 2, 4]], ['Wino czerwone', 'alkohol', [1, 4, 3]], ['Papier toaletowy', 'chemia', [1, 6, 2]], ['Serek wiejski', 'nabial', [3, 1, 0]]]) eq(cell(n, c), w, n);
+  eq(cell('Xyz', 'nabial'), 'zapas', 'zapas'); eq(thumbInfo('Xyz', 'inne').i, 383, 'zapas ogólny to kosz, nie torba');
 }
 console.log(bad ? bad + ' błędów' : 'unit OK');
 process.exit(bad ? 1 : 0);
