@@ -1,7 +1,7 @@
 // Service worker: aplikacja działa offline. Pliki aplikacji: najpierw pamięć podręczna, odświeżanie w tle.
-const VER = 'zakupy-v0.7.0';
+const VER = 'zakupy-v0.7.1';
 const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'css/app.css',
-  'js/app.js', 'js/util.js', 'js/cats.js', 'js/db.js', 'js/calc.js', 'js/gemini.js', 'js/offers.js', 'js/lista.js', 'js/plan.js', 'js/thumbs.js', 'js/icons.js', 'fonts/onest.woff',
+  'js/app.js', 'js/util.js', 'js/cats.js', 'js/db.js', 'js/calc.js', 'js/gemini.js', 'js/offers.js', 'js/lista.js', 'js/plan.js', 'js/thumbs.js', 'js/icons.js', 'fonts/onest.woff', 'img/produkty.webp',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-180.png'];
 
 self.addEventListener('install', e => {

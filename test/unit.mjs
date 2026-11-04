@@ -161,6 +161,7 @@ eq(effectiveModel('gemini-2.5-flash'), DEFAULT_MODEL, 'wycofany model => domyśl
   eq(SLOTS.length, COLS * COLS, 'plansza 8 × 8');
   const name = (n, c) => SLOTS[slotOf(n, c)][0];
   eq(name('Coca-Cola Zero 2 l', 'napoje'), 'cola', 'cola'); eq(name('Masło extra', 'nabial'), 'maslo', 'masło'); eq(name('Migdały blanszowane', 'slodycze'), 'orzechy', 'migdały');
+  for (const [n, c, w] of [['Banany', 'warzywa', 'banan'], ['Karkówka wieprzowa', 'mieso', 'wieprzowina'], ['Filet z dorsza', 'ryby', 'ryba'], ['Papier toaletowy Almusso', 'chemia', 'papier'], ['Whiskas karma', 'zwierzeta', 'karma kot'], ['Kawa ziarnista', 'kawa', 'kawa'], ['Herbata czarna', 'kawa', 'herbata'], ['Masło orzechowe', 'spizarnia', 'orzechy'], ['Żywiec Zdrój woda', 'napoje', 'woda'], ['Chipsy o smaku papryki', 'slodycze', 'chipsy'], ['Pizza z szynką', 'mrozonki', 'pizza'], ['Karma z kurczakiem', 'zwierzeta', 'karma kot'], ['Ciastka z jabłkiem', 'slodycze', 'ciastka'], ['Woda micelarna', 'chemia', 'krem']]) eq(name(n, c), w, n);
   eq(name('Coś nieznanego', 'nabial'), 'mleko', 'zapas: kategoria'); eq(name('Xyz', 'inne'), 'produkt', 'zapas: ogólny');
 }
 console.log(bad ? bad + ' błędów' : 'unit OK');

@@ -9,7 +9,7 @@ import { ic } from './icons.js';
 import { SPRITE, COLS, slotOf } from './thumbs.js';
 import { offerCalc, compareGroups, familyOf, offerLabel, UNITS, packLabel, unitPrice, promoLabel, whereLabel, isMulti, isSure, isHidden, flyerUrl, discountPct } from './offers.js';
 
-const VERSION = '0.7.0';
+const VERSION = '0.7.1';
 const LISTS = ['lista', 'stale', 'chce', 'spiz'];
 const NOW_YM = () => todayISO().slice(0, 7);
 const S = { receipts: [], offers: [], kv: {}, tab: 'start', omode: 'lista', ym: NOW_YM(), q: '', cat: '', ocat: '', lastStore: 'Biedronka', srv: null, oq: '', ounsure: false, lstore: '', lmode: 'zakupy', ostore: '', lshop: false };

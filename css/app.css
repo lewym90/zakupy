@@ -306,7 +306,7 @@ input:focus, select:focus { border-color: var(--blue); }
 .nb { background: #E5302A; color: #fff; font-size: 13px; font-weight: 700; padding: 3px 8px; border-radius: 999px; }
 
 /* Zdjęcie produktu */
-.th { flex: none; width: 64px; height: 64px; border-radius: var(--r-md); background-color: var(--sunken); color: var(--mut); display: grid; place-items: center; background-repeat: no-repeat; background-size: 800% 800%; }
+.th { flex: none; width: 64px; height: 64px; border-radius: var(--r-md); background-color: #101B2E; color: var(--mut); display: grid; place-items: center; background-repeat: no-repeat; background-size: 800% 800%; }
 .th .ic { width: 30px; height: 30px; stroke-width: 1.4; }
 .sb { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 6px; font-size: 13px; font-weight: 800; color: #fff; background: #3B4A63; flex: none; }
 .sb.Lidl { background: #0B4FBF; color: var(--tag); } .sb.Kaufland { background: #D5121E; } .sb.Biedronka { background: #E2231A; }
