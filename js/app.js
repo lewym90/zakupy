@@ -9,7 +9,7 @@ import { ic } from './icons.js';
 import { COLS, CELLS, slotOf, thumbInfo } from './thumbs.js';
 import { offerCalc, compareGroups, familyOf, offerLabel, UNITS, packLabel, unitPrice, promoLabel, whereLabel, isMulti, isSure, isHidden, flyerUrl, discountPct } from './offers.js';
 
-const VERSION = '0.9.0';
+const VERSION = '0.9.1';
 const LISTS = ['lista', 'stale', 'chce', 'spiz'];
 const NOW_YM = () => todayISO().slice(0, 7);
 const S = { receipts: [], offers: [], kv: {}, tab: 'start', omode: 'lista', ym: NOW_YM(), q: '', cat: '', ocat: '', lastStore: 'Biedronka', srv: null, oq: '', ounsure: false, lstore: '', lmode: 'zakupy', ostore: '', lshop: false };
@@ -414,7 +414,7 @@ function ustawienia() {
       <div class="kv"><span>Paragony</span><b>${n}</b></div>
       <div class="kv"><span>Pozycje</span><b>${nl}</b></div>
       <div class="kv"><span>Własne oferty</span><b>${S.offers.length}</b></div>
-      <p class="hint" style="margin:8px 0 12px">Wszystkie dane są tylko w tym telefonie. Zapisuj kopię od czasu do czasu, szczególnie przed zmianą telefonu.</p>
+      <p class="hint" style="margin:8px 0 12px">Wszystkie dane są tylko w tym telefonie. Zapisuj kopię od czasu do czasu, szczególnie przed zmianą telefonu i przed usunięciem aplikacji z ekranu. Kopia zawiera też adres ofert, więc nie udostępniaj jej innym. Klucza Gemini w niej nie ma.</p>
       <div class="row"><button class="btn ghost sm" data-act="export">Zapisz kopię</button><button class="btn ghost sm" data-act="import">Wczytaj kopię</button></div>
       <input type="file" id="impfile" accept="application/json" hidden>
       <p style="margin:16px 0 0"><button class="lnk dng" data-act="wipe">Usuń wszystkie dane z tego telefonu</button></p></div>
@@ -756,7 +756,7 @@ function openCatLimit(c) {
 
 /* ---------- kopie ---------- */
 async function doExport() {
-  const data = { app: 'zakupy', v: 1, at: new Date().toISOString(), receipts: S.receipts, offers: S.offers, kv: { limit: S.kv.limit || 0, catLimits: S.kv.catLimits || {}, lista: S.kv.lista, stale: S.kv.stale, chce: S.kv.chce, spiz: S.kv.spiz, catFix: S.kv.catFix, plan: S.kv.plan } };
+  const data = { app: 'zakupy', v: 1, at: new Date().toISOString(), receipts: S.receipts, offers: S.offers, kv: { limit: S.kv.limit || 0, catLimits: S.kv.catLimits || {}, srvUrl: S.kv.srvUrl || '', lista: S.kv.lista, stale: S.kv.stale, chce: S.kv.chce, spiz: S.kv.spiz, catFix: S.kv.catFix, plan: S.kv.plan } };
   const file = new File([JSON.stringify(data)], 'zakupy-kopia-' + todayISO() + '.json', { type: 'application/json' });
   if (navigator.canShare && navigator.canShare({ files: [file] })) { try { await navigator.share({ files: [file], title: 'Kopia Zakupy' }); return; } catch (e) { if (e.name === 'AbortError') return; } }
   const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name; document.body.append(a); a.click(); a.remove();
@@ -773,6 +773,7 @@ async function doImport(file) {
   S.kv.limit = (j.kv && j.kv.limit) || 0; S.kv.catLimits = (j.kv && j.kv.catLimits) || {};
   for (const k of LISTS) { S.kv[k] = (j.kv && j.kv[k]) || []; await kvSet(k, S.kv[k]); }
   S.kv.catFix = (j.kv && j.kv.catFix) || {}; S.kv.plan = (j.kv && j.kv.plan) || {};
+  if (j.kv && j.kv.srvUrl) { S.kv.srvUrl = j.kv.srvUrl; await kvSet('srvUrl', S.kv.srvUrl); fetchSrv(false); }
   await kvSet('limit', S.kv.limit); await kvSet('catLimits', S.kv.catLimits); await kvSet('catFix', S.kv.catFix); await kvSet('plan', S.kv.plan);
   render(); toast('Kopia wczytana');
 }
