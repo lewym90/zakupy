@@ -133,6 +133,59 @@ class Lidl(unittest.TestCase):
 
 
 
+class Biedronka(unittest.TestCase):
+    def setUp(self):
+        import biedronka
+        self.b = biedronka
+
+    def test_daty_z_adresu(self):
+        t = dt.date(2026, 11, 4)
+        self.assertEqual(self.b.valid_from_slug('https://x/pl/press,id,j2,title,festiwal-wdlin-od-3-11', t), dt.date(2026, 11, 3))
+        self.assertEqual(self.b.valid_from_slug('https://x/title,codziennie-niskie-ceny-p-oferta-od-29-10', t), dt.date(2026, 10, 29))
+        self.assertIsNone(self.b.valid_from_slug('https://x/title,bez-daty', t))
+        self.assertEqual(self.b.valid('Oferta od 03.11 do 08.11', dt.date(2026, 11, 3), t), ('2026-11-03', '2026-11-08'))
+        self.assertEqual(self.b.valid(None, dt.date(2026, 11, 3), t), ('2026-11-03', '2026-11-09'))
+
+    def _page(self):
+        b = self
+        class P:
+            def __init__(s): s.h = None
+            def goto(s, url, **k):
+                s.url = url
+                if 'press' in url:
+                    s.h(type('R', (), {'url': 'https://leaflet-api.prod.biedronka.cloud/api/leaflets/abc?ctx=web', 'json': lambda self: {'images_mobile': [{'page': '0', 'image': 'https://img/0'}, {'page': '1', 'image': 'https://img/1'}]}})())
+            def wait_for_timeout(s, ms): pass
+            def title(s): return 'Gazetki'
+            def evaluate(s, js): return ['https://www.biedronka.pl/pl/press,id,a,title,festiwal-nabiau-od-3-11#page=1', 'https://www.biedronka.pl/pl/press,id,b,title,home-od-31-10', 'https://glovoapp.com/biedronka-express', 'https://www.biedronka.pl/pl/press,id,c,title,magiczna-kraina-zabawek']
+            def on(s, ev, fn): s.h = fn
+            def remove_listener(s, ev, fn): s.h = None
+        return P()
+
+    def test_tylko_spozywcze_i_caly_odczyt(self):
+        import gemini
+        calls = []
+        def rj(self2, imgs, prompt):
+            calls.append(len(imgs)); self.assertIn('Biedronki', prompt); self.assertIn('"opakowanie"', prompt); self.assertIn('"wazne"', prompt)
+            return {'strony': [{'numer': 1, 'oferty': [{'nazwa': 'Masło', 'opakowanie': '200 g', 'cena': '6,99', 'cena_jednostkowa': '1 kg = 34,95', 'promocja': None}, None]}, {'numer': 2, 'oferty': [{'nazwa': 'Ser', 'opakowanie': '150 g', 'cena': '4,99'}]}]}
+        orig = gemini.Reader.read_json; self.b.Reader.read_json = rj
+        class R:
+            ok, status = True, 200
+            def body(s): return b'RIFFxxxx'
+        class Ctx:
+            class request:
+                get = staticmethod(lambda url, **k: R())
+        try:
+            cache = tempfile.mkdtemp()
+            offers, warns = self.b.collect(self._page(), Ctx(), 'K', cache, log=lambda *a: None, today=dt.date(2026, 11, 4))
+            self.assertEqual(calls, [2])
+            self.assertEqual({(o['name'], o['conf'], o['store'], o['page']) for o in offers}, {('Masło', 'ok', 'Biedronka', 1), ('Ser', 'check', 'Biedronka', 2)})
+            self.assertTrue(offers[0]['link'].endswith('festiwal-nabiau-od-3-11#page=1'))
+            self.b.collect(self._page(), Ctx(), 'K', cache, log=lambda *a: None, today=dt.date(2026, 11, 4))
+            self.assertEqual(calls, [2])  # drugi raz z pamięci
+        finally:
+            gemini.Reader.read_json = orig
+
+
 class Promocje(unittest.TestCase):
     def test_parse_multibuy(self):
         from normalize import parse_multibuy as pm

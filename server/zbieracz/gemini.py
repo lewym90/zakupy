@@ -76,7 +76,8 @@ class Reader:
     def _call(self, image_bytes, prompt):
         url = f'{BASE}/models/{self.model}:generateContent'
         imgs = image_bytes if isinstance(image_bytes, (list, tuple)) else [image_bytes]
-        parts = [{'text': prompt}] + [{'inline_data': {'mime_type': 'image/jpeg', 'data': base64.b64encode(b).decode()}} for b in imgs]
+        mime = lambda b: 'image/webp' if b[:4] == b'RIFF' else 'image/png' if b[:4] == b'\x89PNG' else 'image/jpeg'
+        parts = [{'text': prompt}] + [{'inline_data': {'mime_type': mime(b), 'data': base64.b64encode(b).decode()}} for b in imgs]
         body = {'contents': [{'parts': parts}],
                 'generationConfig': {'responseMimeType': 'application/json', 'temperature': 0}}
         return _req(url, self.key, body)

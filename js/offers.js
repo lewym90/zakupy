@@ -179,11 +179,13 @@ export function promoLabel(o, fmtMoney) {
 // Gdzie szukać oferty w sklepie (promocje wielosztukowe bywają poza zwykłą półką).
 export function whereLabel(o) {
   if (o.store === 'Lidl') return o.page ? `gazetka Lidl, str. ${o.page}` : 'gazetka Lidl';
+  if (o.store === 'Biedronka') return o.page ? `gazetka Biedronki, str. ${o.page}` : 'gazetka Biedronki';
   if (o.section) return `dział „${o.section}”`;
   return '';
 }
 // Adres strony gazetki Lidla, żeby można było sprawdzić ofertę na źródle.
 export function flyerUrl(o) {
+  if (o.link) return o.link;
   return o.store === 'Lidl' && o.page && o.section ? `https://www.lidl.pl/l/pl/gazetki/${encodeURIComponent(o.section)}/view/flyer/page/${o.page}` : '';
 }
 // Rabat do pokazania: tylko gdy wynika z wydrukowanych danych (cena przed obniżką albo promocja typu 2 + 1).

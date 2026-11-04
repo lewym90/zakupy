@@ -30,6 +30,7 @@ def main():
     from playwright.sync_api import sync_playwright
     import kaufland
     import lidl
+    import biedronka
     today = dt.date.today()
     prev = load_prev()
     stores, all_offers = {}, []
@@ -44,6 +45,7 @@ def main():
         jobs = [('Kaufland', lambda: kaufland_all(kaufland, page, today))]
         if key:
             jobs.append(('Lidl', lambda: lidl.collect(page, ctx, key, cache_dir, max_pages=int(os.environ.get('LIDL_MAX_PAGES', '140')), log=log)))
+            jobs.append(('Biedronka', lambda: biedronka.collect(page, ctx, key, cache_dir, max_pages=int(os.environ.get('LIDL_MAX_PAGES', '140')), log=log)))
         else:
             stores['Lidl'] = {'ok': False, 'at': now, 'msg': 'Brak klucza Gemini (GEMINI_API_KEY w /etc/zakupy-zbieracz.env), więc gazetki Lidla nie są czytane.'}
         for name, fn in jobs:
@@ -51,9 +53,9 @@ def main():
                 offers, warns = fn()
                 if not offers:
                     raise RuntimeError('zero ofert')
-                if name == 'Lidl':  # niedoczytane strony zostają z poprzedniego odczytu, zamiast znikać
+                if name in ('Lidl', 'Biedronka'):  # niedoczytane strony zostają z poprzedniego odczytu, zamiast znikać
                     read = {(o['section'], o.get('page')) for o in offers}
-                    offers += [o for o in prev.get('offers', []) if o['store'] == 'Lidl' and 'printed' in o and o['until'] >= today.isoformat() and (o['section'], o.get('page')) not in read]
+                    offers += [o for o in prev.get('offers', []) if o['store'] == name and 'printed' in o and o['until'] >= today.isoformat() and (o['section'], o.get('page')) not in read]
                 stores[name] = {'ok': True, 'at': now, 'count': len(offers), 'check': sum(1 for o in offers if o['conf'] == 'check'), 'msg': '; '.join(warns[:5])}
                 all_offers += offers
                 log(name, 'ofert:', len(offers), 'do sprawdzenia:', stores[name]['check'])

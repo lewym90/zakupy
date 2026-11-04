@@ -27,3 +27,7 @@ K = [o for o in d['offers'] if o['store'] == 'Kaufland']
 print('Kaufland:', len(K), dict(collections.Counter(o['conf'] for o in K)))
 print('działy:', dict(collections.Counter(o['section'] for o in K).most_common(30)))
 print('notatki Pepsi:', [o.get('note', '')[:70] for o in L if o['conf'] == 'check' and P.search(o['name'])][:3])
+B = [o for o in d['offers'] if o['store'] == 'Biedronka']
+print('Biedronka:', len(B), dict(collections.Counter(o['conf'] for o in B)), 'gazetki:', dict(collections.Counter(o['section'][:30] for o in B)))
+for o in [o for o in B if o['conf'] == 'ok'][:8]:
+    print(' ', o['name'][:30], f"{o['need']}x{o['amount']}{o['unit']}", o['price'], o.get('promo', ''), 'do', o['until'], 'str', o.get('page'))

@@ -4,7 +4,7 @@ Dwa razy dziennie pobiera oferty sieci i zapisuje jedno `oferty.json`, które ap
 
 - **Kaufland** – kafelki ze strony ofert, bez AI (cena, cena jednostkowa, ważność sprawdzane kodem).
 - **Lidl** – Gemini tylko przepisuje tekst ze stron gazetki; liczby liczy kod i sprawdza je z wydrukowaną ceną jednostkową. Niepotwierdzone pozycje dostają znacznik `check` i aplikacja nie pokazuje dla nich przeliczeń.
-- **Biedronka** – jeszcze nie.
+- **Biedronka** – gazetki spożywcze z publicznego leaflet-api; odczyt jak w Lidlu. Koniec ważności: z tekstu strony albo 6 dni po dacie z adresu.
 
 Uruchomienie ręczne: `systemctl start zakupy-zbieracz`, logi: `journalctl -u zakupy-zbieracz -f`.
 Klucz Gemini: plik `/etc/zakupy-zbieracz.env` (pole `GEMINI_API_KEY=`). Bez klucza zbierany jest tylko Kaufland.

@@ -9,7 +9,7 @@ import { ic } from './icons.js';
 import { COLS, CELLS, slotOf, thumbInfo } from './thumbs.js';
 import { offerCalc, compareGroups, familyOf, offerLabel, UNITS, packLabel, unitPrice, promoLabel, whereLabel, isMulti, isSure, isHidden, flyerUrl, discountPct } from './offers.js';
 
-const VERSION = '0.8.0';
+const VERSION = '0.9.0';
 const LISTS = ['lista', 'stale', 'chce', 'spiz'];
 const NOW_YM = () => todayISO().slice(0, 7);
 const S = { receipts: [], offers: [], kv: {}, tab: 'start', omode: 'lista', ym: NOW_YM(), q: '', cat: '', ocat: '', lastStore: 'Biedronka', srv: null, oq: '', ounsure: false, lstore: '', lmode: 'zakupy', ostore: '', lshop: false };
@@ -407,7 +407,7 @@ function ustawienia() {
       <div class="kv"><span>Pobrane oferty</span><b>${S.srv && S.srv.data ? S.srv.data.offers.length : '—'}</b></div>
       <div class="kv"><span>Zebrane na serwerze</span><b>${S.srv && S.srv.data && S.srv.data.updated ? esc(new Date(S.srv.data.updated).toLocaleString('pl-PL', { dateStyle: 'short', timeStyle: 'short' })) : '—'}</b></div>
       ${srvStores()}
-      <p class="hint" style="margin:8px 0 10px">Serwer zbiera oferty Kauflanda i Lidla dwa razy dziennie. Wklej adres, który pokazał instalator.</p>
+      <p class="hint" style="margin:8px 0 10px">Serwer zbiera oferty Kauflandu, Lidla i Biedronki dwa razy dziennie. Wklej adres, który pokazał instalator.</p>
       <label class="field"><span>Adres ofert</span><input id="surl" inputmode="url" autocomplete="off" value="${esc(S.kv.srvUrl || '')}" placeholder="https://…/zakupy-oferty/…/oferty.json"></label>
       <div class="row"><button class="btn sm" data-act="savesrv">Zapisz i pobierz</button><button class="btn ghost sm" data-act="getsrv">Pobierz teraz</button></div></div>
     <h2>Dane i kopie</h2><div class="card">

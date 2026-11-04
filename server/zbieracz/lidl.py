@@ -47,7 +47,7 @@ def get_flyer(ctx, slug):
     return r.json()['flyer']
 
 
-def map_item(it, valid_from, valid_to, section=''):
+def map_item(it, valid_from, valid_to, section='', store='Lidl'):
     """Jedna pozycja dosłownego odczytu -> oferta (albo None). Cała arytmetyka i kontrola jest w normalize.interpret."""
     brand, nazwa = (it.get('marka') or '').strip(), (it.get('nazwa') or '').strip()
     name = nazwa if brand and nazwa.lower().startswith(brand.lower()) else ' '.join(x for x in [brand, nazwa] if x)
@@ -59,7 +59,7 @@ def map_item(it, valid_from, valid_to, section=''):
         return None
     old = money(it.get('cena_przed')) or 0
     pack = dict(amount=r['amount'], unit=r['unit'])
-    o = make_offer('Lidl', name, pack, r['price'], old if old > r['price'] and r['need'] == 1 else 0, valid_from, valid_to,
+    o = make_offer(store, name, pack, r['price'], old if old > r['price'] and r['need'] == 1 else 0, valid_from, valid_to,
                    cond=(it.get('warunek') or '').strip(), section=section, src='leaflet', conf=r['conf'], note=r['note'], brand=(it.get('marka') or '').strip())
     o['mode'], o['need'] = r['mode'], r['need']
     for k in ('pay', 'pct'):
@@ -153,6 +153,10 @@ def collect(page, ctx, key, cache_dir, max_pages=140, only=DEFAULT_ONLY, log=pri
                 if o:
                     o['page'] = num
                     offers.append(o)
-    # ta sama oferta bywa w gazetce dwa razy: gdy jedno miejsce jest potwierdzone, niepewny duplikat nie jest potrzebny
+    return drop_dupes(offers), warns
+
+
+def drop_dupes(offers):
+    """Ta sama oferta bywa w gazetce dwa razy: gdy jedno miejsce jest potwierdzone, niepewny duplikat nie jest potrzebny."""
     sure = {o['name'] for o in offers if o['conf'] == 'ok'}
-    return [o for o in offers if o['conf'] != 'check' or o['name'] not in sure], warns
+    return [o for o in offers if o['conf'] != 'check' or o['name'] not in sure]

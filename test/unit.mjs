@@ -157,6 +157,8 @@ eq(effectiveModel('gemini-2.5-flash'), DEFAULT_MODEL, 'wycofany model => domyśl
   eq(discountPct({ price: 2399, old: 3999 }), 40, 'rabat z ceny przed obniżką');
   eq(discountPct({ price: 2030, mode: 'bundle', need: 3, pay: 2 }), 33, '2 + 1 gratis to 33%');
   eq(discountPct({ price: 998, mode: 'bundle', need: 2 }), 0, 'bez danych nie ma rabatu');
+  const { whereLabel, flyerUrl } = await import('../js/offers.js');
+  eq(whereLabel({ store: 'Biedronka', page: 5 }), 'gazetka Biedronki, str. 5', 'gdzie: Biedronka'); eq(flyerUrl({ store: 'Biedronka', link: 'https://x/y#page=5' }), 'https://x/y#page=5', 'link gazetki Biedronki');
   const { thumbInfo, SLOTS } = await import('../js/thumbs.js');
   eq(SLOTS, 384, 'sześć plansz po 64 pola');
   const cell = (n, c) => { const i = thumbInfo(n, c); return i.exact ? [Math.floor(i.i / 64) + 1, Math.floor((i.i % 64) / 8), i.i % 8] : 'zapas'; };
