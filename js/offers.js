@@ -186,4 +186,10 @@ export function whereLabel(o) {
 export function flyerUrl(o) {
   return o.store === 'Lidl' && o.page && o.section ? `https://www.lidl.pl/l/pl/gazetki/${encodeURIComponent(o.section)}/view/flyer/page/${o.page}` : '';
 }
+// Rabat do pokazania: tylko gdy wynika z wydrukowanych danych (cena przed obniżką albo promocja typu 2 + 1).
+export function discountPct(o) {
+  if (o.old > o.price) return Math.round((1 - o.price / o.old) * 100);
+  if (o.mode === 'bundle' && o.pay && o.pay < o.need) return Math.round((1 - o.pay / o.need) * 100);
+  return 0;
+}
 export const isMulti = o => (o.mode === 'bundle' || o.mode === 'nth') && Math.round(o.need || 1) > 1;

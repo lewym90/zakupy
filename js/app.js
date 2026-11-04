@@ -6,12 +6,13 @@ import { readReceipt, DEFAULT_MODEL, effectiveModel, listModels, pickFlash } fro
 import { itemFromOffer, manualItem, byStore } from './lista.js';
 import { matchOffers, basket, pantryLow, planSummary } from './plan.js';
 import { ic } from './icons.js';
-import { offerCalc, compareGroups, familyOf, offerLabel, UNITS, packLabel, unitPrice, promoLabel, whereLabel, isMulti, isSure, isHidden, flyerUrl } from './offers.js';
+import { SPRITE, COLS, slotOf } from './thumbs.js';
+import { offerCalc, compareGroups, familyOf, offerLabel, UNITS, packLabel, unitPrice, promoLabel, whereLabel, isMulti, isSure, isHidden, flyerUrl, discountPct } from './offers.js';
 
-const VERSION = '0.6.1';
+const VERSION = '0.7.0';
 const LISTS = ['lista', 'stale', 'chce', 'spiz'];
 const NOW_YM = () => todayISO().slice(0, 7);
-const S = { receipts: [], offers: [], kv: {}, tab: 'start', omode: 'lista', ym: NOW_YM(), q: '', cat: '', ocat: '', lastStore: 'Biedronka', srv: null, oq: '', ounsure: false, lstore: '', lmode: 'zakupy' };
+const S = { receipts: [], offers: [], kv: {}, tab: 'start', omode: 'lista', ym: NOW_YM(), q: '', cat: '', ocat: '', lastStore: 'Biedronka', srv: null, oq: '', ounsure: false, lstore: '', lmode: 'zakupy', ostore: '', lshop: false };
 const view = document.getElementById('view');
 
 const ICON = {
@@ -21,14 +22,23 @@ const ICON = {
   okazje: '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
   lista: '<path d="M9 6h11M9 12h11M9 18h11"/><path d="m3.5 6 1 1 2-2M3.5 12l1 1 2-2M3.5 18l1 1 2-2"/>',
   ustawienia: '<circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M18.7 5.3l-2.1 2.1M7.4 16.6l-2.1 2.1"/>',
-  wiecej: '<circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/>',
+  menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
+  koszyk: '<path d="M3 4h2.5l2.3 11h10.400l2-7.5H6.5"/><circle cx="9.5" cy="19.5" r="1.5"/><circle cx="16.5" cy="19.5" r="1.5"/>',
+  metka: '<path d="M3 12 12 3h8v8l-9 9z"/><circle cx="15.5" cy="8.5" r="1.3"/>',
+  monety: '<ellipse cx="12" cy="7" rx="8" ry="3"/><path d="M4 7v5c0 1.7 3.600 3 8 3s8-1.3 8-3V7M4 12v5c0 1.7 3.600 3 8 3s8-1.3 8-3v-5"/>',
   spizarnia: '<path d="M7 7h10M8 3.5h8a1 1 0 0 1 1 1V7l1 2v10.5a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V9l1-2V4.5a1 1 0 0 1 1-1Z"/><path d="M6 12h12v5H6z"/>',
   budzet: '<path d="M3 7.5h17a1 1 0 0 1 1 1V19a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M3 7.5 5.5 4h11"/><circle cx="16.5" cy="13.5" r="1.2"/>',
 };
-// Telefon: pięć zakładek, reszta w „Więcej”. Większy ekran: wszystko w pasku bocznym.
-const TABS = [['start', 'Start'], ['okazje', 'Okazje'], ['lista', 'Lista'], ['paragony', 'Paragony'], ['cennik', 'Cennik', 'wide'], ['spizarnia', 'Spiżarnia', 'wide'], ['budzet', 'Budżet', 'wide'], ['ustawienia', 'Ustawienia', 'wide'], ['wiecej', 'Więcej', 'narrow']];
-const PARENT = { cennik: 'paragony', spizarnia: 'wiecej', budzet: 'wiecej', ustawienia: 'wiecej' };
+// Telefon: pięć zakładek, reszta w menu na Starcie. Większy ekran: wszystko w pasku bocznym.
+const TABS = [['start', 'Start'], ['okazje', 'Oferty'], ['lista', 'Lista'], ['paragony', 'Paragony'], ['budzet', 'Budżet'], ['cennik', 'Cennik', 'wide'], ['spizarnia', 'Spiżarnia', 'wide'], ['ustawienia', 'Ustawienia', 'wide']];
+const PARENT = { cennik: 'paragony', spizarnia: 'start', ustawienia: 'start', wiecej: 'start' };
 
+const svg = id => `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">${ICON[id]}</svg>`;
+function applyTheme() {
+  const t = S.kv.theme || 'dark', v = t === 'auto' ? (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark') : t;
+  document.documentElement.dataset.theme = v;
+  try { localStorage.setItem('theme', v); } catch (_) {}
+}
 function toast(msg) {
   const t = document.getElementById('toast');
   t.textContent = msg; t.classList.add('on');
@@ -39,12 +49,13 @@ function toast(msg) {
 async function init() {
   const [receipts, offers] = await Promise.all([all('receipts'), all('offers')]);
   S.receipts = receipts; S.offers = offers;
-  for (const k of ['limit', 'catLimits', 'geminiKey', 'geminiModel', 'srvUrl', ...LISTS, 'catFix', 'plan']) S.kv[k] = await kvGet(k);
+  for (const k of ['limit', 'catLimits', 'geminiKey', 'geminiModel', 'srvUrl', 'theme', ...LISTS, 'catFix', 'plan']) S.kv[k] = await kvGet(k);
+  applyTheme(); matchMedia('(prefers-color-scheme: light)').addEventListener('change', applyTheme);
   for (const k of LISTS) S.kv[k] = S.kv[k] || [];
   S.kv.catFix = S.kv.catFix || {}; S.kv.plan = S.kv.plan || {};
   S.srv = (await kvGet('srvOffers')) || null;
   document.getElementById('tabbar').innerHTML = TABS.map(([id, n, c]) =>
-    `<button class="tab ${c || ''}" data-tab="${id}"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true">${ICON[id]}</svg>${n}</button>`).join('');
+    `<button class="tab ${c || ''}" data-tab="${id}">${svg(id)}${n}</button>`).join('');
   document.getElementById('tabbar').addEventListener('click', e => {
     const b = e.target.closest('[data-tab]'); if (!b) return;
     if (S.reload) { location.reload(); return; }
@@ -69,11 +80,13 @@ function render() {
 /* ---------- ekrany ---------- */
 const SCREENS = { start, paragony, cennik, okazje, lista, budzet, ustawienia, spizarnia, wiecej };
 
-// Cena jak na etykiecie. Przecinek zostaje w tekście dla czytników ekranu.
-function pr(g, tag) {
-  const [a, b] = (Math.abs(g) / 100).toFixed(2).split('.');
-  return `<span class="pr${tag ? ' tagp' : ''}">${g < 0 ? '−' : ''}${Number(a).toLocaleString('pl-PL')}<span class="cm">,</span><sup>${b}</sup><small> zł</small></span>`;
-}
+const pr = (g, tag) => `<span class="pr${tag ? ' tagp' : ''}">${zl(g)}</span>`;
+const thumb = o => {
+  if (!SPRITE) return `<span class="th">${ic(o.cat || catOf(o.name))}</span>`;
+  const i = slotOf(o.name, o.cat), step = 100 / (COLS - 1);
+  return `<span class="th" style="background-image:url(img/produkty.webp);background-position:${(i % COLS) * step}% ${Math.floor(i / COLS) * step}%"></span>`;
+};
+const storeMark = s => `<span class="sb ${esc(s)}" aria-hidden="true">${esc(s[0])}</span>`;
 function receiptItem(r) {
   const mark = r.check === 'ok' ? '<span class="down" title="Suma się zgadza"> ✓</span>' : r.check === 'diff' ? '<span class="up" title="Suma się nie zgadza"> ⚠</span>' : '';
   return `<button class="item" data-act="receipt" data-id="${r.id}">
@@ -81,40 +94,37 @@ function receiptItem(r) {
     <span class="r num">${zl(receiptTotal(r))}</span></button>`;
 }
 
+function deals(all) {
+  const today = todayISO(), score = o => discountPct(o) + (isMulti(o) ? 5 : 0) + (['best', 'good'].includes(offerVerdict(o).t) ? 30 : 0);
+  return all.filter(o => o.until >= today && (!o.from || o.from <= today) && isSure(o) && (discountPct(o) || isMulti(o))).map(o => [score(o), o]).sort((a, b) => b[0] - a[0]).slice(0, 6).map(x => x[1]);
+}
 function start() {
-  const st = monthStats(S.receipts, S.ym);
-  const limit = S.kv.limit || 0;
-  const cur = S.ym === NOW_YM();
-  const over = limit && st.spent > limit;
+  const ym = NOW_YM(), st = monthStats(S.receipts, ym), limit = S.kv.limit || 0, over = limit && st.spent > limit;
   const pct = limit ? Math.min(100, (st.spent / limit) * 100) : 0;
-  const rows = Object.entries(st.cats).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, 5)
-    .map(([c, v]) => `<div class="ln-line"><span class="l">${c === '__rest' ? `${ic('inne')}Nieprzypisane` : `${ic(c)}${catById(c).n}`}</span><span class="v">${zl(v)}</span></div>`).join('');
   const day = new Date().getDate();
-  const proj = cur && day >= 5 && st.spent > 0 ? Math.round((st.spent / day) * daysInMonth(S.ym)) : 0;
-  const today = todayISO(), every = allOffers();
-  const good = every.filter(o => o.until >= today && isSure(o)).filter(o => ['best', 'good'].includes(offerVerdict(o).t)).length;
+  const proj = day >= 5 && st.spent > 0 ? Math.round((st.spent / day) * daysInMonth(ym)) : 0;
+  const today = todayISO(), every = allOffers(), act = every.filter(o => o.until >= today && !isHidden(o));
   const stale = S.kv.stale.filter(i => matchOffers(i.name, every, today).length), low = pantryLow(S.kv.spiz);
-  const ps = cur && limit ? monthPlan() : null;
-  const alert = (tab, t, s2, extra = '') => `<button class="item alert" data-act="goto" data-tab="${tab}"${extra}><span class="mid"><span class="t">${t}</span><span class="s">${s2}</span></span>${ic('dalej', 'go')}</button>`;
-  const alerts = [
-    stale.length ? alert('lista', `Stałe produkty w ofercie: ${stale.length} z ${S.kv.stale.length}`, esc(stale.slice(0, 3).map(i => i.name).join(', ')), ' data-m="stale"') : '',
-    low.length ? alert('spizarnia', `Kończy się: ${low.length}`, esc(low.slice(0, 3).map(i => i.name).join(', '))) : '',
-    good ? alert('okazje', `${good} ${good === 1 ? 'okazja jest' : 'okazji jest'} lepsza niż zwykle`, 'Na podstawie Waszych paragonów') : '',
-  ].join('');
-  return `<div class="head"><div><h1>Zakupy</h1></div>
-    <div class="mnav"><button data-act="mprev" aria-label="Poprzedni miesiąc">‹</button><b>${monthName(S.ym)}</b><button data-act="mnext" aria-label="Następny miesiąc">›</button></div></div>
-    <div class="tapewrap"><div class="tape">
-      <div class="shop"><span>Wydane w tym miesiącu</span><button class="btn sm" data-act="new">Dodaj paragon</button></div>
-      <div class="big">${pr(st.spent)}</div>
-      ${limit ? `<div class="bar ${over ? 'over' : ''}"><i style="width:${pct}%"></i></div><div class="of">${over ? 'Limit przekroczony o ' + zl(st.spent - limit) : `Zostało ${zl(limit - st.spent)} z ${zlShort(limit)}`}</div>`
-        : `<div class="of">Limit ustawisz w Budżecie</div>`}
-      ${ps && ps.free > 0 ? `<div class="proj">Na dzień zostaje ${zl(ps.perDay)}</div>` : ''}
-      ${proj ? `<div class="proj">Przy tym tempie ok. ${zlShort(proj)} na koniec miesiąca</div>` : ''}
-      ${st.saved > 0 ? `<div class="saved">Oszczędzone na promocjach: ${zl(st.saved)}</div>` : ''}
-    </div></div>
-    ${alerts ? `<h2>Warto sprawdzić</h2><div class="list">${alerts}</div>` : ''}
+  const left = S.kv.lista.filter(i => !i.done), stores = new Set(left.map(i => i.store)), lSum = left.reduce((a, i) => a + (i.price || 0) * (i.qty || 1), 0);
+  const ps = limit ? monthPlan() : null, ds = deals(every), h = new Date().getHours();
+  const dealCard = o => { const p = discountPct(o); return `<div class="deal">${thumb(o)}<span class="t">${esc(o.name)}</span><span class="hint">${esc(isMulti(o) ? packLabel(o) : packLabel(o))}, ${esc(o.store)}</span>
+    <span class="pp">${p ? `<span class="pct">−${p}%</span>` : ''}${o.old ? `<s class="num">${zl(o.old)}</s>` : ''}</span><span class="pp">${pr(offerCalc(o).total, true)}</span>${addBtn(o)}</div>`; };
+  const row = (tab, ico, cls, t, s2, right = '', extra = '') => `<button class="rowl ${cls}" data-act="goto" data-tab="${tab}"${extra}>${svg(ico)}<span class="mid"><span class="t">${t}</span>${s2}</span>${right}${ic('dalej', 'go')}</button>`;
+  return `<div class="topbar"><button class="tb" data-act="goto" data-tab="wiecej" aria-label="Menu">${svg('menu')}</button><span class="logo"><img src="icons/icon-180.png" alt="">Zakupy</span><button class="tb" data-act="goto" data-tab="ustawienia" aria-label="Ustawienia">${svg('ustawienia')}</button></div>
+    <div class="hello"><h1>${h < 5 || h >= 18 ? 'Dobry wieczór!' : 'Dzień dobry!'}</h1><p class="sub">Oto, co dziś warto sprawdzić.</p></div>
+    <div class="tiles">
+      <button class="tile y" data-act="goto" data-tab="okazje" style="border-color:var(--line)">${svg('metka')}<span>Oferty</span><b>${act.length}</b></button>
+      <button class="tile b" data-act="goto" data-tab="lista">${svg('lista')}<span>Na liście</span><b>${left.length}</b></button>
+      <button class="tile g" data-act="goto" data-tab="budzet">${svg('monety')}<span>Wydatki m-c</span><b class="sm" id="spent">${zl(st.spent)}</b>${limit ? `<small class="${over ? 'up' : ''}">${Math.round((st.spent / limit) * 100)}%</small>` : ''}</button>
+    </div>
+    ${ds.length ? `<section class="deals"><div class="deals-h"><span>Dzisiejsze okazje</span><button data-act="goto" data-tab="okazje">Zobacz wszystkie</button></div><div class="deals-r">${ds.map(dealCard).join('')}</div></section>` : ''}
+    ${stale.length ? row('lista', 'metka', 'y', `Stałe produkty w ofercie: ${stale.length} z ${S.kv.stale.length}`, `<span class="s">${esc(stale.slice(0, 3).map(i => i.name).join(', '))}</span>`, '', ' data-m="stale"') : ''}
+    ${left.length ? row('lista', 'koszyk', '', 'Na liście dziś', `<span class="s">${stores.size} ${stores.size === 1 ? 'sklep' : 'sklepy'}, ${left.length} ${left.length === 1 ? 'produkt' : 'produktów'}${lSum ? `, ok. ${zl(lSum)}` : ''}</span>`) : ''}
+    ${row('spizarnia', 'spizarnia', 'g', low.length ? `Kończy się: ${low.length}` : 'Spiżarnia', `<span class="s">${low.length ? esc(low.slice(0, 3).map(i => i.name).join(', ')) : `${S.kv.spiz.length} produktów w domu`}</span>`, low.length ? `<span class="nb">${low.length} ${low.length === 1 ? 'brak' : 'braki'}</span>` : '')}
+    ${row('budzet', 'monety', 'y', 'Budżet miesiąca', limit ? `<span class="s">${zl(st.spent)} z ${zlShort(limit)}, ${over ? 'przekroczony o ' + zl(st.spent - limit) : `zostało ${zl(limit - st.spent)}`}</span><span class="bar ${over ? 'over' : ''}" style="display:block"><i style="width:${pct}%"></i></span>` : `<span class="s">Ustaw limit, a pokażę, ile zostało</span>`)}
+    ${ps && ps.free > 0 ? `<p class="note">Na dzień zostaje ${zl(ps.perDay)}${proj ? `. Przy tym tempie ok. ${zlShort(proj)} na koniec miesiąca.` : '.'}</p>` : proj ? `<p class="note">Przy tym tempie ok. ${zlShort(proj)} na koniec miesiąca.</p>` : ''}
+    ${st.saved > 0 ? `<p class="note">Oszczędzone na promocjach: <b class="down">${zl(st.saved)}</b></p>` : ''}
     ${S.receipts.length === 0 ? `<div class="card empty"><b>Dodaj pierwszy paragon</b><p>Wpisz go ręcznie albo zrób zdjęcie. Z kilku paragonów zobaczysz, ile naprawdę płacicie i które promocje się opłacają.</p><button class="btn" data-act="new">Dodaj paragon</button></div>` : ''}
-    ${rows ? `<h2>Na co idą pieniądze</h2><div class="card">${rows}</div>` : ''}
     ${st.rs.length ? `<h2>Ostatnie paragony</h2><div class="list">${[...st.rs].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 3).map(receiptItem).join('')}</div>` : ''}`;
 }
 
@@ -197,17 +207,17 @@ function offerCard(o, v) {
   return `<div class="ofw">${offerBody(o, v)}${addBtn(o)}</div>`;
 }
 function offerBody(o, v) {
-  const c = offerCalc(o), multi = isMulti(o), hid = isHidden(o), meta = `<span class="hint">${esc(o.store)}, do ${fmtDate(o.until)}${o.cond ? ', ' + esc(o.cond) : ''}</span>`;
-  if (!isSure(o)) return `<button class="offer${hid ? ' unsure' : ''}" data-act="offer" data-id="${o.id}">
+  const c = offerCalc(o), multi = isMulti(o), hid = isHidden(o), meta = `<span class="hint">${esc(o.store)}, do ${fmtDate(o.until)}${o.cond ? ', ' + esc(o.cond) : ''}</span>`, p = discountPct(o);
+  if (!isSure(o)) return `<button class="offer${hid ? ' unsure' : ''}" data-act="offer" data-id="${o.id}">${thumb(o)}
     <span class="mid"><span class="t">${esc(o.name)}</span>${meta}
       ${o.printed ? `<span class="hint">${hid ? 'Na gazetce' : 'W sklepie'}: ${esc(o.printed)}</span>` : ''}${whereLine(o)}${promoPill(o)}<span class="pill nodata">${hid ? 'odczyt niepewny' : 'bez ceny za jednostkę'}</span></span>
-    <span class="p">${pr(c.total)}<small>${hid ? 'cena z odczytu' : 'za opakowanie'}</small>${o.old ? `<s class="num">${zl(o.old)}</s>` : ''}</span></button>`;
+    <span class="p">${pr(c.total, !hid)}<small>${hid ? 'cena z odczytu' : 'za opakowanie'}</small>${o.old ? `<s class="num">${zl(o.old)}</s>` : ''}</span></button>`;
   const u = unitPrice(o);
-  return `<button class="offer" data-act="offer" data-id="${o.id}">
+  return `<button class="offer" data-act="offer" data-id="${o.id}">${thumb(o)}
     <span class="mid"><span class="t">${esc(o.name)}</span>${meta}
       <span class="hint">${multi ? 'Komplet' : 'Opakowanie'}: <b>${esc(packLabel(o))}</b></span>
       <span class="uprice">Za ${esc(u.label)}: <b>${zl(u.price)}</b></span>${depositLine(o)}${whereLine(o)}${promoPill(o)}${v && v.t !== 'nodata' && v.t !== 'few' ? `<span class="pill ${v.t}">${esc(v.txt)}</span>` : ''}</span>
-    <span class="p">${pr(c.total, multi || o.old)}<small>${multi ? 'za komplet' : 'za opakowanie'}</small>${o.old ? `<s class="num">${zl(o.old)}</s>` : ''}</span></button>`;
+    <span class="p">${p ? `<span class="pct">−${p}%</span>` : ''}${pr(c.total, true)}<small>${multi ? 'za komplet' : 'za opakowanie'}</small>${o.old ? `<s class="num">${zl(o.old)}</s>` : ''}</span></button>`;
 }
 
 function okazje() {
@@ -231,19 +241,21 @@ function okazje() {
         <span class="p">${pr(r.c.total, r.rank === 1)}<small>${multi ? 'za komplet' : 'za opakowanie'}</small></span></button>${addBtn(r.o)}</div>`; }).join('');
       return `<div class="card cmp"><div class="cmp-h"><b>${esc(g.fam.n)}</b><span class="hint">najtaniej: ${esc(b.o.store)}, ${zl(unitPrice(b.o, g.per).price)} za ${esc(unitPrice(b.o, g.per).label)}</span></div>${rows}</div>`;
     }).join('') + '</div><p class="note">Porównuję ten sam rodzaj produktu po cenie za litr, kilogram lub sztukę. Marki mogą się różnić, więc sprawdź, czy to naprawdę to, czego szukasz.' + (nUnsure ? ' Oferty z niepewnym odczytem nie biorą udziału w porównaniu.' : '') + '</p>'
-      : `<div class="empty"><b>Na razie nie ma czego porównać</b><p>Porównanie pojawi się, gdy dodasz dwie aktywne okazje na podobny produkt (np. cola w Lidlu i w Kauflandzie).</p><button class="btn" data-act="newoffer">Dodaj okazję</button></div>`;
+      : `<div class="empty"><b>Na razie nie ma czego porównać</b><p>Porównanie pojawi się, gdy dodasz dwie aktywne okazje na podobny produkt (np. cola w Lidlu i w Kauflandzie).</p><button class="btn" data-act="newoffer">Dodaj ofertę</button></div>`;
   } else {
     const used = [...new Set(act.map(o => o.cat))];
     const q = normQ(S.oq).trim();
-    const list = act.filter(o => (!S.ocat || (S.ocat === '__multi' ? isMulti(o) : o.cat === S.ocat)) && (!q || normQ(o.store + ' ' + o.name).includes(q))).map(o => ({ o, v: isSure(o) ? offerVerdict(o) : null }));
+    const list = act.filter(o => (!S.ostore || o.store === S.ostore) && (!S.ocat || (S.ocat === '__multi' ? isMulti(o) : o.cat === S.ocat)) && (!q || normQ(o.store + ' ' + o.name).includes(q))).map(o => ({ o, v: isSure(o) ? offerVerdict(o) : null }));
     list.sort((a, b) => (!a.v - !b.v) || (a.v ? RANK[a.v.t] - RANK[b.v.t] : 0) || (isMulti(b.o) - isMulti(a.o)) || a.o.name.localeCompare(b.o.name, 'pl'));
     const nMulti = act.filter(isMulti).length;
     const chips = `<div class="chips"><button class="chip" aria-pressed="${!S.ocat}" data-act="ocat" data-c="">Wszystko</button>${nMulti ? `<button class="chip" aria-pressed="${S.ocat === '__multi'}" data-act="ocat" data-c="__multi">Komplety i 2+1 (${nMulti})</button>` : ''}${CATS.filter(c => used.includes(c.id)).map(c => `<button class="chip" aria-pressed="${S.ocat === c.id}" data-act="ocat" data-c="${c.id}">${c.n}</button>`).join('')}</div>`;
-    body = (act.length ? `<input class="search" id="oq" type="search" placeholder="Szukaj okazji, np. masło" value="${esc(S.oq)}" autocomplete="off">` + chips : '') + unsureBar + (list.length ? `<div class="list grid">${list.map(({ o, v }) => offerCard(o, v)).join('')}</div>` : `<div class="empty"><b>${act.length ? 'Nic nie pasuje' : nUnsure ? 'Brak potwierdzonych ofert' : 'Brak aktywnych okazji'}</b><p>${act.length ? 'Zmień wyszukiwanie lub kategorię.' : 'Dodaj promocję ręcznie albo podłącz serwer z ofertami w Ustawieniach.'}</p>${act.length ? '' : '<button class="btn" data-act="newoffer">Dodaj okazję</button>'}</div>`);
+    const ss = [...new Set(act.map(o => o.store))].sort((a, b) => a.localeCompare(b, 'pl'));
+    const sc = ss.length > 1 ? `<div class="chips">${ss.map(x => `<button class="chip" aria-pressed="${S.ostore === x}" data-act="ostore" data-s="${esc(x)}">${esc(x)}</button>`).join('')}</div>` : '';
+    body = (act.length ? `<input class="search" id="oq" type="search" placeholder="Szukaj oferty, np. masło" value="${esc(S.oq)}" autocomplete="off">` + sc + chips : '') + unsureBar + (list.length ? `<div class="list grid">${list.map(({ o, v }) => offerCard(o, v)).join('')}</div>` : `<div class="empty"><b>${act.length ? 'Nic nie pasuje' : nUnsure ? 'Brak potwierdzonych ofert' : 'Brak aktywnych okazji'}</b><p>${act.length ? 'Zmień wyszukiwanie lub kategorię.' : 'Dodaj promocję ręcznie albo podłącz serwer z ofertami w Ustawieniach.'}</p>${act.length ? '' : '<button class="btn" data-act="newoffer">Dodaj ofertę</button>'}</div>`);
   }
-  return `<div class="head"><div><h1>Okazje</h1><p class="sub">${S.omode === 'porownanie' ? 'Która oferta wychodzi taniej' : 'Oceniane względem Waszych cen'}</p></div><button class="btn sm" data-act="newoffer">Dodaj</button></div>
+  return `<div class="head"><div><h1>Oferty</h1><p class="sub">${S.omode === 'porownanie' ? 'Która oferta wychodzi taniej' : 'Oceniane względem Waszych cen'}</p></div><button class="btn sm" data-act="newoffer">Dodaj</button></div>
     ${seg}${body}
-    ${old ? `<p style="text-align:center"><button class="lnk" data-act="purge">Usuń zakończone okazje (${old})</button></p>` : ''}`;
+    ${old ? `<p style="text-align:center"><button class="lnk" data-act="purge">Usuń zakończone oferty (${old})</button></p>` : ''}`;
 }
 
 function lista() {
@@ -255,7 +267,7 @@ function lista() {
   const groups = byStore(items, S.lstore), today = todayISO();
   const left = items.filter(i => !i.done).length, done = items.filter(i => i.done).length;
   const head = `<div class="head"><div><h1>Lista</h1><p class="sub">${items.length ? `Do kupienia: ${left}` : 'Zakupy sklep po sklepie'}</p></div><button class="btn sm" data-act="newitem">Dodaj</button></div>${seg}`;
-  if (!items.length) return head + `<div class="empty"><b>Lista jest pusta</b><p>W Okazjach naciśnij „+” przy ofercie albo dodaj produkt ręcznie.</p><button class="btn" data-act="goto" data-tab="okazje">Przejdź do okazji</button></div>`;
+  if (!items.length) return head + `<div class="empty"><b>Lista jest pusta</b><p>W Ofertach naciśnij „+” przy ofercie albo dodaj produkt ręcznie.</p><button class="btn" data-act="goto" data-tab="okazje">Przejdź do ofert</button></div>`;
   const chips = stores.length > 1 ? `<div class="chips"><button class="chip" aria-pressed="${!S.lstore}" data-act="lstore" data-s="">Wszystkie sklepy</button>${stores.map(s => `<button class="chip" aria-pressed="${S.lstore === s}" data-act="lstore" data-s="${esc(s)}">${esc(s)} (${items.filter(i => i.store === s && !i.done).length})</button>`).join('')}</div>` : '';
   const row = i => {
     const warn = i.until && i.until < today ? `<span class="up">Oferta skończyła się ${fmtDate(i.until)}</span>` : i.from && i.from > today ? `<span class="up">Oferta dopiero od ${fmtDate(i.from)}</span>` : '';
@@ -264,7 +276,9 @@ function lista() {
       </button>
       <div class="li-r">${i.price ? `<span class="p">${zl(i.price * (i.qty || 1))}</span>` : ''}<div class="li-q"><button data-act="lqty" data-id="${esc(i.id)}" data-d="-1" aria-label="${(i.qty || 1) > 1 ? 'Mniej' : 'Usuń z listy'}">${(i.qty || 1) > 1 ? '−' : '×'}</button><b>${i.qty || 1}</b><button data-act="lqty" data-id="${esc(i.id)}" data-d="1" aria-label="Więcej">+</button></div></div></div>`;
   };
-  return head + chips + groups.map(g => `<section class="card lgroup"><div class="lg-h"><h2>${esc(g.store)}</h2><span class="hint">${g.left ? `${g.left} do kupienia` : 'wszystko kupione'}${g.sum ? `, ${zl(g.sum)}` : ''}${g.noPrice ? ' + bez ceny' : ''}</span></div>${g.items.map(row).join('')}</section>`).join('')
+  const one = S.lstore && groups[0];
+  return head + chips + groups.map(g => `<section class="card lgroup"><div class="lg-h"><h2>${esc(g.store)} (${g.left})</h2><span class="hint">${g.left ? `${g.left} do kupienia` : 'wszystko kupione'}${g.sum ? `, ok. ${zl(g.sum)}` : ''}${g.noPrice ? ' + bez ceny' : ''}</span></div>${g.items.map(row).join('')}</section>`).join('')
+    + (one ? `<div class="shopbar"><span>Suma (${esc(one.store)})</span><b>${zl(one.sum)}</b></div><button class="btn full" data-act="lshop">${S.lshop ? 'Pokaż szczegóły' : `W sklepie (${esc(one.store)})`}</button>` : '')
     + (done ? `<p style="text-align:center"><button class="lnk" data-act="lclear">Usuń kupione (${done})</button></p>` : '');
 }
 const addForm = (form, ph, label = 'Dodaj') => `<form class="addrow" data-form="${form}"><input name="v" placeholder="${ph}" list="prod" autocomplete="off" aria-label="${ph}"><button class="btn">${label}</button></form>`;
@@ -276,7 +290,7 @@ function koszyk() {
   if (!wish.length) return form + `<div class="empty"><b>Wpisz, co chcesz kupić</b><p>Znajdę najtańszą ofertę na każdy produkt i podzielę zakupy na sklepy.</p></div>`;
   const id = name => wish.find(w => w.name === name).id;
   const row = r => { const u = unitPrice(r.o); return `<div class="li"><div class="li-main" style="cursor:default"><span class="mid"><span class="t">${esc(r.name)}</span><span class="hint">${esc(r.o.name)}</span><span class="hint">${esc(packLabel(r.o))}, ${zl(u.price)} za ${esc(u.label)}${r.alts ? `, sprawdzono jeszcze ${r.alts}` : ''}</span>${r.o.cond ? `<span class="hint">Warunek: ${esc(r.o.cond)}</span>` : ''}${promoPill(r.o)}</span><span class="p">${zl(r.c.total)}</span></div>${delX('wishdel', id(r.name))}</div>`; };
-  return form + (b.found ? `<div class="total"><div><span class="hint">Razem w ${b.stores.length} ${b.stores.length === 1 ? 'sklepie' : 'sklepach'}</span><br>${pr(b.total)}</div><button class="btn sm" data-act="wishadd">Dodaj na listę</button></div>` : '')
+  return form + (b.found ? `<div class="best-box"><span class="hint">Najniższy koszt, razem w ${b.stores.length} ${b.stores.length === 1 ? 'sklepie' : 'sklepach'}</span>${pr(b.total)}<button class="btn full" data-act="wishadd">Przenieś na listę</button></div>` : '')
     + b.stores.map(g => `<section class="card lgroup"><div class="lg-h"><h2>${esc(g.store)}</h2><span class="hint">${zl(g.sum)}</span></div>${g.rows.map(row).join('')}</section>`).join('')
     + (b.missing.length ? `<section class="card lgroup"><div class="lg-h"><h2>Bez oferty</h2><span class="hint">nie ma w ofertach</span></div>${b.missing.map(n => `<div class="li"><div class="li-main" style="cursor:default"><span class="mid"><span class="t">${esc(n)}</span></span></div>${delX('wishdel', id(n))}</div>`).join('')}</section>` : '')
     + `<p class="note">Biorę najniższą cenę za litr, kilogram lub sztukę. Suma to cena opakowań i kompletów z ofert, bez kaucji.</p>`;
@@ -296,9 +310,8 @@ function spizarnia() {
       : `<div class="empty"><b>Spiżarnia jest pusta</b><p>Dopisz rzeczy, których nie może zabraknąć. Gdy zejdziesz do minimum, zobaczysz to na ekranie Start.</p></div>`}`;
 }
 function wiecej() {
-  const it = (t, n, s2, i) => `<button class="item" data-act="goto" data-tab="${t}"><span class="em">${i}</span><span class="mid"><span class="t">${n}</span><span class="s">${s2}</span></span>${ic('dalej', 'go')}</button>`;
-  const svg = id => `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">${ICON[id]}</svg>`;
-  return `<div class="head"><div><h1>Więcej</h1></div></div><div class="list">${it('spizarnia', 'Spiżarnia', 'Zapasy w domu', svg('spizarnia'))}${it('budzet', 'Budżet i plan miesiąca', 'Limit i zaplanowane wydatki', svg('budzet'))}${it('ustawienia', 'Ustawienia', 'Oferty, klucz, kopia danych', svg('ustawienia'))}</div>`;
+  const it = (t, n, s2) => `<button class="item" data-act="goto" data-tab="${t}"><span class="em">${svg(t)}</span><span class="mid"><span class="t">${n}</span><span class="s">${s2}</span></span>${ic('dalej', 'go')}</button>`;
+  return `<div class="head"><div><h1>Menu</h1></div></div><div class="list">${it('spizarnia', 'Spiżarnia', 'Zapasy w domu')}${it('cennik', 'Cennik', 'Ceny z Waszych paragonów')}${it('ustawienia', 'Ustawienia', 'Wygląd, oferty, klucz, kopia danych')}</div>`;
 }
 function monthPlan() {
   const ym = NOW_YM(), st = monthStats(S.receipts, ym), d = new Date();
@@ -330,13 +343,19 @@ function openNewItem() {
 }
 
 function budzet() {
-  const ym = NOW_YM(), st = monthStats(S.receipts, ym), limit = S.kv.limit || 0, cl = S.kv.catLimits || {};
+  const ym = S.ym, now = ym === NOW_YM(), st = monthStats(S.receipts, ym), limit = S.kv.limit || 0, cl = S.kv.catLimits || {};
   const yms = [5, 4, 3, 2, 1, 0].map(k => addMonth(ym, -k));
   const tots = monthTotals(S.receipts, yms);
   const mx = Math.max(limit, ...tots.map(t => t.spent), 1);
   const H = 76;
   const hist = `<div class="hist" style="position:relative">${tots.map(t => `<div class="col ${t.ym === ym ? 'cur' : ''}"><i style="height:${Math.max(3, (t.spent / mx) * H)}px"></i><span>${monthShort(t.ym)}</span></div>`).join('')}${limit ? `<div class="lim" style="bottom:${23 + (limit / mx) * H}px"></div>` : ''}</div>`;
-  const plan = S.kv.plan[ym] || [], ps = monthPlan();
+  const plan = S.kv.plan[NOW_YM()] || [], ps = monthPlan();
+  const parts = Object.entries(st.cats).filter(([, v]) => v > 0).sort((x, y) => y[1] - x[1]);
+  const top = parts.slice(0, 4), rest = parts.slice(4).reduce((a, [, v]) => a + v, 0), sl = [...top.map(([c, v]) => [c === '__rest' ? 'Nieprzypisane' : catById(c).n, v]), ...(rest ? [['Inne', rest]] : [])];
+  const COL = ['#3D86E8', '#B98500', '#8E6FE0', '#189C7B', '#D9574F'], tot = sl.reduce((a, x) => a + x[1], 0), R0 = 54, CIRC = 2 * Math.PI * R0;
+  let off = 0;
+  const arcs = sl.map(([n, v], i) => { const len = (v / tot) * CIRC, gap = sl.length > 1 ? 2 : 0, a = `<circle cx="74" cy="74" r="${R0}" fill="none" stroke="${COL[i]}" stroke-width="20" stroke-dasharray="${Math.max(1, len - gap)} ${CIRC}" stroke-dashoffset="${-off}"><title>${esc(n)}: ${zl(v)} (${Math.round((v / tot) * 100)}%)</title></circle>`; off += len; return a; }).join('');
+  const donut = tot ? `<div class="card" style="margin-bottom:12px"><div class="dn"><svg viewBox="0 0 148 148" role="img" aria-label="Wydatki według kategorii"><g transform="rotate(-90 74 74)">${arcs}</g><text x="74" y="71" text-anchor="middle" fill="currentColor" font-size="17" font-weight="750">${esc(zl(st.spent))}</text><text x="74" y="89" text-anchor="middle" fill="var(--mut)" font-size="12">wydane</text></svg><div class="lg">${sl.map(([n, v], i) => `<div><i style="background:${COL[i]}"></i><span>${esc(n)}</span><b>${Math.round((v / tot) * 100)}%</b></div>`).join('')}</div></div></div>` : '';
   const pRows = plan.map(p => `<div class="pz" style="padding-left:0"><button class="li-check" data-act="plandone" data-id="${esc(p.id)}" aria-pressed="${!!p.done}" aria-label="Zrobione" style="border:0;${p.done ? 'background:var(--ink)' : 'background:none'}">${p.done ? '✓' : ''}</button><span class="mid"><span class="t"${p.done ? ' style="text-decoration:line-through;opacity:.5"' : ''}>${esc(p.name)}</span></span><b class="num">${zl(p.amount)}</b>${delX('plandel', p.id)}</div>`).join('');
   const rows = CATS.map(c => {
     const v = st.cats[c.id] || 0, l = cl[c.id] || 0;
@@ -344,14 +363,14 @@ function budzet() {
     const p = l ? Math.min(100, (v / l) * 100) : 0;
     return `<button class="catrow" data-act="catlimit" data-c="${c.id}"><span class="em">${ic(c.id)}</span><span class="mid"><span>${c.n}</span>${l ? `<div class="bar ${v > l ? 'over' : ''}"><i style="width:${p}%"></i></div>` : ''}</span><span class="v">${zl(v)}${l ? `<br><small class="${v > l ? 'up' : ''}" style="font-weight:500;color:${v > l ? '' : 'var(--mut)'}">z ${zlShort(l)}</small>` : ''}</span></button>`;
   }).join('');
-  return `<div class="head"><div><h1>Budżet</h1><p class="sub">${monthName(ym)}</p></div></div>
+  return `<div class="head"><div><h1>Budżet</h1></div><div class="mnav"><button data-act="mprev" aria-label="Poprzedni miesiąc">‹</button><b>${monthName(ym)}</b><button data-act="mnext" aria-label="Następny miesiąc">›</button></div></div>${donut}
     <div class="card"><label class="field" style="margin:0"><span>Limit miesięczny na zakupy (zł)</span><div class="row" style="flex-wrap:nowrap"><input id="limit" inputmode="decimal" value="${limit ? centsToInput(limit).replace(',00', '') : ''}" placeholder="np. 3000"><button class="btn" data-act="savelimit">Zapisz</button></div></label></div>
     <h2>Plan miesiąca</h2><div class="card">
       <form class="addrow" data-form="plan"><input name="v" placeholder="Na co" autocomplete="off" aria-label="Na co"><input name="a" inputmode="decimal" placeholder="zł" aria-label="Kwota" style="flex:none;width:92px"><button class="btn">Dodaj</button></form>
       ${pRows}
       ${limit ? `<div class="kv"><span>Limit</span><b>${zl(limit)}</b></div><div class="kv"><span>Wydane</span><b>${zl(st.spent)}</b></div><div class="kv"><span>Zaplanowane</span><b>${zl(ps.planned)}</b></div>${ps.listSum ? `<div class="kv"><span>Na liście zakupów</span><b>${zl(ps.listSum)}</b></div>` : ''}<div class="kv"><span>Wolne</span><b class="${ps.free < 0 ? 'up' : ''}">${zl(ps.free)}</b></div><div class="kv"><span>Na dzień, zostało dni: ${ps.left}</span><b>${zl(ps.perDay)}</b></div>` : '<p class="hint" style="margin:0">Ustaw limit powyżej, a policzę, ile zostaje na dzień.</p>'}</div>
     <h2>Ostatnie 6 miesięcy</h2><div class="card">${hist}<p class="hint" style="margin:6px 0 0">${limit ? 'Przerywana linia to Wasz limit.' : 'Po ustawieniu limitu zobaczysz tu linię limitu.'}</p></div>
-    <h2>Ten miesiąc wg kategorii</h2><div class="card">${rows || '<p class="hint" style="margin:0">Po dodaniu paragonów zobaczysz tu podział wydatków. Dotknij kategorii, żeby ustawić jej limit.</p>'}</div>
+    <h2>Wydatki wg kategorii</h2><div class="card">${rows || '<p class="hint" style="margin:0">Po dodaniu paragonów zobaczysz tu podział wydatków. Dotknij kategorii, żeby ustawić jej limit.</p>'}</div>
     `;
 }
 
@@ -364,6 +383,7 @@ function ustawienia() {
   const key = S.kv.geminiKey || '';
   const n = S.receipts.length, nl = S.receipts.reduce((x, r) => x + r.lines.length, 0);
   return `<div class="head"><div><h1>Ustawienia</h1><p class="sub">Zakupy ${VERSION}</p></div></div>
+    <h2>Wygląd</h2><div class="seg" role="group" aria-label="Motyw">${[['dark', 'Ciemny'], ['light', 'Jasny'], ['auto', 'Jak w telefonie']].map(([t, n]) => `<button aria-pressed="${(S.kv.theme || 'dark') === t}" data-act="theme" data-t="${t}">${n}</button>`).join('')}</div>
     <h2>Aplikacja</h2><div class="card">
       <div class="kv"><span>Zainstalowana wersja</span><b>${VERSION}</b></div>
       <div class="kv"><span>Najnowsza na serwerze</span><b id="upd-latest">—</b></div>
@@ -388,7 +408,7 @@ function ustawienia() {
     <h2>Dane i kopie</h2><div class="card">
       <div class="kv"><span>Paragony</span><b>${n}</b></div>
       <div class="kv"><span>Pozycje</span><b>${nl}</b></div>
-      <div class="kv"><span>Okazje</span><b>${S.offers.length}</b></div>
+      <div class="kv"><span>Własne oferty</span><b>${S.offers.length}</b></div>
       <p class="hint" style="margin:8px 0 12px">Wszystkie dane są tylko w tym telefonie. Zapisuj kopię od czasu do czasu, szczególnie przed zmianą telefonu.</p>
       <div class="row"><button class="btn ghost sm" data-act="export">Zapisz kopię</button><button class="btn ghost sm" data-act="import">Wczytaj kopię</button></div>
       <input type="file" id="impfile" accept="application/json" hidden>
@@ -647,7 +667,7 @@ function openOffer(id) {
   const d = ex ? { ...ex, mode: ex.mode || 'unit', need: String(ex.need || 1), pct: String(ex.pct || 50), price: centsToInput(ex.price), amount: fmtN(ex.amount) }
     : { id: null, store: S.lastStore, name: '', cat: 'inne', auto: true, mode: 'unit', need: '1', pct: '50', price: '', amount: '1', unit: 'szt', until: inDays(6), cond: '' };
   const MODES = [['unit', 'Za sztukę'], ['bundle', 'Komplet'], ['nth', 'Drugi taniej']];
-  const el = sheet(ex ? 'Okazja' : 'Nowa okazja', `<div class="chips">${STORES.map(s => `<button class="chip" aria-pressed="${s === d.store}" data-s="${s}">${s}</button>`).join('')}</div>
+  const el = sheet(ex ? 'Oferta' : 'Nowa oferta', `<div class="chips">${STORES.map(s => `<button class="chip" aria-pressed="${s === d.store}" data-s="${s}">${s}</button>`).join('')}</div>
     <label class="field"><span>Produkt</span><input class="o-name" list="prod" value="${esc(d.name)}" placeholder="np. Coca-Cola" autocomplete="off"></label>
     <div class="field"><span>Rodzaj promocji</span><div class="seg" style="margin:0">${MODES.map(([m, n]) => `<button aria-pressed="${m === d.mode}" data-mode="${m}">${n}</button>`).join('')}</div></div>
     <div class="row" style="flex-wrap:nowrap"><label class="field" style="flex:1"><span class="o-pl"></span><input class="o-price" inputmode="decimal" value="${esc(d.price)}" placeholder="0,00"></label>
@@ -712,7 +732,7 @@ function openOffer(id) {
     const o = { ...built, id: d.id || uid(), name: d.name.trim() };
     await put('offers', o);
     S.offers = [...S.offers.filter(x => x.id !== o.id), o];
-    S.lastStore = o.store; el.close(); render(); toast('Okazja zapisana');
+    S.lastStore = o.store; el.close(); render(); toast('Oferta zapisana');
   });
 }
 
@@ -787,6 +807,9 @@ view.addEventListener('click', async e => {
   else if (a === 'cat') { S.cat = b.dataset.c; render(); }
   else if (a === 'ocat') { S.ocat = b.dataset.c; render(); }
   else if (a === 'omode') { S.omode = b.dataset.m; render(); }
+  else if (a === 'ostore') { S.ostore = S.ostore === b.dataset.s ? '' : b.dataset.s; render(); }
+  else if (a === 'lshop') { S.lshop = !S.lshop; document.body.classList.toggle('shop', S.lshop); render(); }
+  else if (a === 'theme') { S.kv.theme = b.dataset.t; await kvSet('theme', b.dataset.t); applyTheme(); render(); }
   else if (a === 'ounsure') { S.ounsure = !S.ounsure; render(); }
   else if (a === 'addlist') { const o = allOffers().find(x => x.id === b.dataset.id); if (o) await toggleOnList(o); }
   else if (a === 'newitem') openNewItem();

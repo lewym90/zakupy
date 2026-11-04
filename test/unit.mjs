@@ -151,5 +151,17 @@ eq(effectiveModel('gemini-2.5-flash'), DEFAULT_MODEL, 'wycofany model => domyśl
   eq(catOfOffer('Szynka', 'Mięso, Drób, Wędliny'), 'wedliny', 'dział łączony: decyduje nazwa');
   eq(catOfOffer('Tymbark sok', 'Hity tygodnia'), 'napoje', 'dział promocyjny nic nie mówi');
 }
+{
+  const eq = (a, b, m) => { if (JSON.stringify(a) !== JSON.stringify(b)) { bad++; console.log('FAIL', m, JSON.stringify(a), '!=', JSON.stringify(b)); } };
+  const { discountPct } = await import('../js/offers.js');
+  eq(discountPct({ price: 2399, old: 3999 }), 40, 'rabat z ceny przed obniżką');
+  eq(discountPct({ price: 2030, mode: 'bundle', need: 3, pay: 2 }), 33, '2 + 1 gratis to 33%');
+  eq(discountPct({ price: 998, mode: 'bundle', need: 2 }), 0, 'bez danych nie ma rabatu');
+  const { slotOf, SLOTS, COLS } = await import('../js/thumbs.js');
+  eq(SLOTS.length, COLS * COLS, 'plansza 8 × 8');
+  const name = (n, c) => SLOTS[slotOf(n, c)][0];
+  eq(name('Coca-Cola Zero 2 l', 'napoje'), 'cola', 'cola'); eq(name('Masło extra', 'nabial'), 'maslo', 'masło'); eq(name('Migdały blanszowane', 'slodycze'), 'orzechy', 'migdały');
+  eq(name('Coś nieznanego', 'nabial'), 'mleko', 'zapas: kategoria'); eq(name('Xyz', 'inne'), 'produkt', 'zapas: ogólny');
+}
 console.log(bad ? bad + ' błędów' : 'unit OK');
 process.exit(bad ? 1 : 0);

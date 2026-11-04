@@ -22,7 +22,7 @@ try:
         vis = pg.locator(f'.tab[data-tab="{tab}"]')
         if vis.is_visible(): vis.click()
         elif tab == 'cennik': pg.locator('.tab[data-tab="paragony"]').click(); pg.click('.seg [data-tab="cennik"]')
-        else: pg.locator('.tab[data-tab="wiecej"]').click(); pg.click(f'#view [data-tab="{tab}"]')
+        else: pg.locator('.tab[data-tab="start"]').click(); pg.click('.topbar [data-tab="wiecej"]'); pg.click(f'#view .list [data-tab="{tab}"]')
     pg.goto('http://127.0.0.1:8765/'); pg.wait_for_selector('.tab')
     pg.screenshot(path=f'{OUT}/01-start-pusty.png')
 
@@ -53,9 +53,8 @@ try:
     add_receipt('Kaufland', '2026-11-02', [('Rabat kuponowy', '1', 'szt', '-3,00', ''), ('Ser żółty gouda', '0,4', 'kg', '16,00', '')])
     pg.click('[data-ea="save"]'); pg.wait_for_selector('.sheet', state='detached')
 
-    nav('start'); pg.wait_for_selector('.tape')
-    check('Listopad' in pg.inner_text('.mnav'), 'miesiąc Listopad')
-    spent = pg.inner_text('.tape .big').replace(' ', ' ')
+    nav('start'); pg.wait_for_selector('.tiles')
+    spent = pg.inner_text('#spent').replace(' ', ' ')
     check(spent == '73,77 zł', 'wydane w listopadzie = 60,77 + 13,00 = 73,77 (jest: ' + spent + ')')
     pg.screenshot(path=f'{OUT}/03-start.png')
 
@@ -99,7 +98,7 @@ try:
     pg.click('[data-act="catlimit"][data-c="mieso"]'); pg.fill('#cl', '60'); pg.click('[data-cl="save"]')
     pg.screenshot(path=f'{OUT}/09-budzet.png', full_page=True)
     nav('start'); pg.screenshot(path=f'{OUT}/10-start-limit.png')
-    check('Zostało' in pg.inner_text('.tape .of'), 'limit: zostało …')
+    check('zostało' in pg.inner_text('#view'), 'limit: zostało …')
 
     nav('ustawienia')
     check(VER in pg.inner_text('#view'), 'ustawienia pokazują wersję')
@@ -160,7 +159,7 @@ try:
     pg.screenshot(path=f'{OUT}/12-okazje-plus.png')
     nav('lista'); pg.wait_for_selector('.lgroup')
     hs = [h.inner_text() for h in pg.locator('.lgroup h2').all()]
-    check(hs == ['Kaufland', 'Lidl'], f'lista: sklepy jako nagłówki: {hs}')
+    check(hs == ['Kaufland (1)', 'Lidl (2)'], f'lista: sklepy jako nagłówki: {hs}')
     t = pg.locator('.lgroup').nth(1).inner_text(); check('Coca-Cola Dwusztuk' in t and 'Pepsi' in t and 'Masło' not in t and 'gazetka Lidl, str. 14' in t and '2 do kupienia' in t, 'lista: w Lidlu tylko produkty z Lidla')
     pg.click('[data-act="newitem"]'); pg.wait_for_selector('.i-name'); pg.fill('.i-name', 'Mleko'); pg.click('.sheet [data-s="Lidl"]'); pg.click('[data-save]'); pg.wait_for_selector('.sheet', state='detached')
     pg.click('[data-act="lstore"][data-s="Lidl"]'); pg.wait_for_timeout(100)
@@ -180,9 +179,9 @@ try:
     t = pg.inner_text('.list'); check('Kaufland' in t and '6,49' in t and 'Masło' not in t.split('\n')[1:0], 'stałe: pokazuje ofertę: ' + t.replace('\n', ' | '))
     pg.fill('[data-form="stale"] input', 'szafran'); pg.press('[data-form="stale"] input', 'Enter'); pg.wait_for_timeout(100)
     check('Teraz nie ma w ofertach' in pg.inner_text('.list'), 'stałe: brak oferty podany wprost')
-    pg.click('[data-act="lmode"][data-m="koszyk"]'); pg.click('[data-act="wishstale"]'); pg.wait_for_selector('.total')
+    pg.click('[data-act="lmode"][data-m="koszyk"]'); pg.click('[data-act="wishstale"]'); pg.wait_for_selector('.best-box')
     pg.fill('[data-form="chce"] input', 'cola'); pg.press('[data-form="chce"] input', 'Enter'); pg.wait_for_timeout(120); t = pg.inner_text('#view')
-    check('Kaufland' in t and 'Bez oferty' in t and 'szafran' in t and 'zły odczyt' not in t and 'Razem w 2 sklepach' in t, 'koszyk: sklepy, brakujące, bez niepewnych: ' + t.replace('\n', ' | ')[:220])
+    check('Kaufland' in t and 'Bez oferty' in t and 'szafran' in t and 'zły odczyt' not in t and 'razem w 2 sklepach' in t, 'koszyk: sklepy, brakujące, bez niepewnych: ' + t.replace('\n', ' | ')[:220])
     pg.screenshot(path=f'{OUT}/15-koszyk.png', full_page=True)
     pg.click('[data-act="wishadd"]'); pg.wait_for_selector('.li-check'); check('Zakupy' in pg.inner_text('.seg [aria-pressed="true"]'), 'koszyk: po dodaniu widać listę')
     nav('spizarnia'); pg.fill('[data-form="spiz"] input', 'Ryż'); pg.press('[data-form="spiz"] input', 'Enter'); pg.wait_for_selector('.pz.low')
@@ -191,8 +190,8 @@ try:
     nav('lista'); check('Dowolny sklep' in pg.inner_text('#view') and 'Ryż' in pg.inner_text('#view'), 'spiżarnia: brak trafia na listę')
     nav('budzet'); pg.fill('[data-form="plan"] [name=v]', 'Duże zakupy'); pg.fill('[data-form="plan"] [name=a]', '500'); pg.press('[data-form="plan"] [name=a]', 'Enter'); pg.wait_for_timeout(120); t = pg.inner_text('#view')
     check('Zaplanowane' in t and '500,00' in t and 'Na dzień' in t, 'plan: suma i kwota na dzień'); pg.screenshot(path=f'{OUT}/17-plan.png', full_page=True)
-    pg.click('[data-tab="start"]'); pg.wait_for_selector('.tape'); t = pg.inner_text('#view')
-    check('Warto sprawdzić' in t and 'Stałe produkty w ofercie' in t and 'Kończy się: 1' in t and 'Na dzień zostaje' in t, 'Start: alerty o stałych i spiżarni, plan: ' + t.replace('\n', ' | ')[:240]); pg.screenshot(path=f'{OUT}/18-start.png', full_page=True)
+    pg.click('[data-tab="start"]'); pg.wait_for_selector('.tiles'); t = pg.inner_text('#view')
+    check('Stałe produkty w ofercie' in t and 'Kończy się: 1' in t and 'Na dzień zostaje' in t and 'Dzisiejsze okazje' in t, 'Start: alerty o stałych i spiżarni, plan: ' + t.replace('\n', ' | ')[-300:]); pg.screenshot(path=f'{OUT}/18-start.png', full_page=True)
     pg.reload(); pg.wait_for_selector('.tab'); nav('spizarnia'); check(pg.locator('.pz').count() == 1, 'spiżarnia zostaje po przeładowaniu')
     pg.set_viewport_size({'width': 360, 'height': 740}); nav('lista'); pg.wait_for_timeout(100); check(pg.evaluate('document.documentElement.scrollWidth - innerWidth') <= 0, '360 px: bez przewijania')
     labels = pg.evaluate("[...document.querySelectorAll('.tab')].every(b => b.scrollWidth <= b.clientWidth + 1)"); check(labels, '360 px: podpisy zakładek się mieszczą'); pg.screenshot(path=f'{OUT}/14-lista-360.png'); pg.set_viewport_size({'width': 390, 'height': 844})
@@ -200,9 +199,9 @@ try:
 
     # offline po pierwszym załadowaniu (service worker)
     pg.wait_for_function('navigator.serviceWorker.ready.then(()=>true)'); pg.reload(); time.sleep(1)
-    ctx.set_offline(True); pg.reload(); pg.wait_for_selector('.tape'); check(True, 'działa offline po przeładowaniu'); ctx.set_offline(False)
+    ctx.set_offline(True); pg.reload(); pg.wait_for_selector('.tiles'); check(True, 'działa offline po przeładowaniu'); ctx.set_offline(False)
     # trwałość danych
-    pg.reload(); pg.wait_for_selector('.tape'); check('73,77' in pg.inner_text('.tape .big').replace(' ', ' '), 'dane zostają po przeładowaniu')
+    pg.reload(); pg.wait_for_selector('.tiles'); check('73,77' in pg.inner_text('#spent').replace(' ', ' '), 'dane zostają po przeładowaniu')
 
     # tablet i laptop (te same dane): sprawdzenie układu bez poziomego przewijania
     for name, (w, h) in {'tablet': (820, 1180), 'laptop': (1366, 800)}.items():
