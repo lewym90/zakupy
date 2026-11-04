@@ -2,12 +2,13 @@
 """Krótki raport o ostatnim odczycie. Nie wypisuje tokenu ani adresu. Uruchomienie: patrz KONTYNUACJA.md."""
 import collections
 import json
+import os
 import re
 import subprocess
 
 P = re.compile(r'cola|pepsi|żywiec|zywiec|mirinda|7up', re.I)
 run = lambda *a: subprocess.run(a, capture_output=True, text=True).stdout
-print('stan:', run('systemctl', 'is-active', 'zakupy-zbieracz').strip())
+print('stan:', run('systemctl', 'is-active', 'zakupy-zbieracz').strip(), '| kod z Biedronką:', 'tak' if os.path.exists('/opt/zakupy-zbieracz/zbieracz/biedronka.py') else 'NIE')
 log = run('journalctl', '-u', 'zakupy-zbieracz', '--since', 'today', '--no-pager').splitlines()
 print('przeczytane strony dziś:', sum(1 for x in log if re.search(r' str\. \d+: \d+ ofert$', x)))
 for x in [x for x in log if re.search(r'ofert:|zapisano|BŁĄD|limit|JSON', x)][-8:]:

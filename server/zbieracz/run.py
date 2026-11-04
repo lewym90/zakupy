@@ -48,6 +48,9 @@ def main():
             jobs.append(('Biedronka', lambda: biedronka.collect(page, ctx, key, cache_dir, max_pages=int(os.environ.get('LIDL_MAX_PAGES', '140')), log=log)))
         else:
             stores['Lidl'] = {'ok': False, 'at': now, 'msg': 'Brak klucza Gemini (GEMINI_API_KEY w /etc/zakupy-zbieracz.env), więc gazetki Lidla nie są czytane.'}
+        # wspólny limit Gemini: najpierw sklep, który ma mniej ofert, żeby żaden nie został bez danych
+        have = lambda n: sum(1 for o in prev.get('offers', []) if o['store'] == n)
+        jobs = jobs[:1] + sorted(jobs[1:], key=lambda j: have(j[0]))
         for name, fn in jobs:
             try:
                 offers, warns = fn()

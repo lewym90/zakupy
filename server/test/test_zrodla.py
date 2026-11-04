@@ -245,6 +245,11 @@ class Czas(unittest.TestCase):
             r.read_json(b'x', 'p')
         self.assertIn('null', str(cm.exception))
 
+    def test_kaufland_pomija_katalog_zabawek(self):
+        import kaufland
+        row = ['Katalog Zabawka cz.1', 'Oferta ważna od 29.10. do 04.11.', 'Marka', 'Klocki', '1 szt', '', '', '49,99', '', 0, '']
+        self.assertEqual(kaufland.parse_rows([row], dt.date(2026, 11, 2))[0], [])
+
     def test_kaufland_pewna_cena_bez_przeliczenia(self):
         import kaufland
         v = 'Oferta ważna od 29.10. do 04.11.'

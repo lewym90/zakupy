@@ -7,7 +7,7 @@ from normalize import apply_multibuy, make_offer, money, parse_base_price, parse
 
 URL_CURRENT = 'https://sklep.kaufland.pl/oferta/przeglad.html?kloffer-week=current'
 URL_NEXT = 'https://sklep.kaufland.pl/oferta/przeglad.html?kloffer-week=next'
-SKIP_SECTIONS = re.compile(r'AGD|elektro|Tekstylia|dla dzieci|Zabawki|samochod|sezonowe', re.I)
+SKIP_SECTIONS = re.compile(r'AGD|elektro|Tekstylia|dla dzieci|Zabawk|Katalog|samochod|sezonowe', re.I)
 
 # Wykonywane w stronie. Zwraca wiersze: [sekcja, ważność, marka, nazwa, opakowanie, cena_za_jednostkę, rabat, cena, cena_przed, z_kartą]
 EXTRACT_JS = r"""

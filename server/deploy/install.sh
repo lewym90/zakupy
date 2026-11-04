@@ -64,7 +64,7 @@ cat > /etc/systemd/system/zakupy-zbieracz.timer <<UNIT
 [Unit]
 Description=Zbieracz ofert - 2x dziennie
 [Timer]
-OnCalendar=*-*-* 05:20,17:40
+OnCalendar=*-*-* 09:30,17:40
 RandomizedDelaySec=15min
 Persistent=true
 [Install]
