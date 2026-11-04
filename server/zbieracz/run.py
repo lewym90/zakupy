@@ -75,10 +75,16 @@ def main():
         all_offers += old
         stores['Lidl']['count'] = len(old)
 
-    uniq = {}
-    for o in all_offers:
-        uniq[o['id']] = o
-    data = {'v': 1, 'updated': now, 'stores': stores, 'offers': sorted(uniq.values(), key=lambda o: (o['store'], o['section'], o['name']))}
+    import klasyfikuj
+    from normalize import dedupe_offers
+    today_s = today.isoformat()
+    offers = dedupe_offers([o for o in all_offers if o['until'] >= today_s])
+    log('po usunięciu duplikatów:', len(offers), 'z', len(all_offers))
+    try:
+        klasyfikuj.classify(offers, STATE, key, log)
+    except Exception as e:  # noqa: BLE001
+        log('Dobór grafik: błąd', e)
+    data = {'v': 1, 'updated': now, 'stores': stores, 'offers': sorted(offers, key=lambda o: (o['store'], o['section'], o['name']))}
     os.makedirs(OUT, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=OUT, suffix='.tmp')
     with os.fdopen(fd, 'w') as f:

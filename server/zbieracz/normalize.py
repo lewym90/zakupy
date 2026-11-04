@@ -347,3 +347,33 @@ def interpret(name, pack_text, price, extra='', unit_text='', deposit='', promo=
     if chosen['pct']:
         r['pct'] = chosen['pct']
     return r
+
+
+def clean_name(brand, nazwa, store=''):
+    """Porządkuje nazwę z gazetki: bez gwiazdek, gramatury na końcu i powtórzonej marki; marką nie jest sam sklep."""
+    n = re.sub(r'\*+', '', nazwa or '').strip(' ,')
+    b = (brand or '').replace('*', '').strip()
+    if b.lower() == store.lower():
+        b = ''
+    pack = re.compile(r',?\s*\d+(?:[.,]\d+)?(?:\s*x\s*\d+(?:[.,]\d+)?)?\s*(?:kg|g|ml|l|szt\.?)\s*$', re.I)
+    tail = lambda t, w: t[:-len(w)].rstrip(' ,') if w and t.lower().endswith(w.lower()) and len(t) > len(w) else t
+    for _ in range(2):
+        n = tail(tail(pack.sub('', n).strip(' ,'), b), store)
+    if n.isupper() and len(n) > 3:
+        n = n.capitalize()
+    if b and not n.lower().startswith(b.lower()):
+        return f'{b} {n}'.strip()
+    return n
+
+
+def dedupe_offers(offers):
+    """Ta sama oferta z kilku gazetek: zostaje jedna, pewniejsza i ważna najdłużej."""
+    rank = {'ok': 2, 'cena': 1, 'check': 0}
+    best = {}
+    for o in offers:
+        canon = re.sub(r'[^a-ząćęłńóśźż0-9]+', '', re.sub(r'\d+(?:[.,]\d+)?\s*(?:kg|g|ml|l|szt)\b\.?', '', o['name'].lower()))
+        k = (o['store'], canon, o.get('need', 1), o['price'])
+        c = best.get(k)
+        if c is None or (rank.get(o['conf'], 0), o['until']) > (rank.get(c['conf'], 0), c['until']):
+            best[k] = o
+    return list(best.values())

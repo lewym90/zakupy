@@ -186,6 +186,36 @@ class Biedronka(unittest.TestCase):
             gemini.Reader.read_json = orig
 
 
+class Porzadek(unittest.TestCase):
+    def test_nazwy(self):
+        from normalize import clean_name as c
+        self.assertEqual(c('Gusto Bello', 'Prosciutto cotto Gusto Bello, 100 g', 'Biedronka'), 'Gusto Bello Prosciutto cotto')
+        self.assertEqual(c('Biedronka', 'Prosciutto di Parma Biedronka', 'Biedronka'), 'Prosciutto di Parma')
+        self.assertEqual(c('Delikate', 'Ser mozzarella wiórki Delikate, 300 g', 'Biedronka'), 'Delikate Ser mozzarella wiórki')
+        self.assertEqual(c('DZIK', 'NAPÓJ GAZOWANY DZIK ZERO**', 'Biedronka'), 'DZIK Napój gazowany dzik zero')
+        self.assertEqual(c('', 'Kaki', 'Lidl'), 'Kaki')
+
+    def test_duplikaty(self):
+        from normalize import dedupe_offers as d
+        o = lambda n, p, u, c='ok', s='Lidl', need=1: {'name': n, 'price': p, 'until': u, 'conf': c, 'store': s, 'need': need}
+        r = d([o('Kaki', 499, '2026-11-04'), o('Kaki', 499, '2026-11-07'), o('Kaki', 499, '2026-11-09', 'check'), o('Kaki', 599, '2026-11-07'), o('Kaki', 499, '2026-11-07', s='Biedronka'), o('Woda 1,5 l', 200, '2026-11-07'), o('Woda', 200, '2026-11-05')])
+        self.assertEqual(sorted((x['store'], x['price'], x['until']) for x in r), [('Biedronka', 499, '2026-11-07'), ('Lidl', 200, '2026-11-07'), ('Lidl', 499, '2026-11-07'), ('Lidl', 599, '2026-11-07')])
+
+    def test_dobor_grafik(self):
+        import klasyfikuj as k
+        self.assertEqual(len(k.LABELS), 384)
+        calls = []
+        class R:
+            def read_json(s, imgs, prompt):
+                calls.append(prompt); return {'w': [{'i': 0, 'g': 7, 'k': 'nabial'}, {'i': 1, 'g': 9999, 'k': 'nabial'}, {'i': 2, 'g': 1, 'k': 'zle'}, None]}
+        d = tempfile.mkdtemp()
+        offers = [{'name': 'A'}, {'name': 'B'}, {'name': 'C'}]
+        self.assertEqual(k.classify(offers, d, 'K', lambda *a: None, reader=R()), 1)
+        self.assertEqual((offers[0]['thumb'], offers[0]['aiCat']), (7, 'nabial')); self.assertNotIn('thumb', offers[1])  # złe odpowiedzi odrzucone
+        k.classify([{'name': 'A'}], d, 'K', lambda *a: None, reader=R())
+        self.assertEqual(len(calls), 1)  # znana nazwa nie kosztuje zapytania
+
+
 class Promocje(unittest.TestCase):
     def test_parse_multibuy(self):
         from normalize import parse_multibuy as pm

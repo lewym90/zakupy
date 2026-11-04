@@ -8,7 +8,7 @@
   --pos: #35D08F; --pos-soft: #123B2F; --neg: #FF6B5E; --neg-soft: #431E20; --warn-soft: #3A3010; --warn-ink: #FFE58A;
   --hero: #FFFFFF; --hero-ink: #14213A; --hero-mut: #5A6B85; --bar: rgba(10, 19, 34, .94);
   --r-lg: 18px; --r-md: 12px; --r-sm: 7px;
-  --gut: 16px; --tabs: 64px;
+  --gut: 16px; --tabs: 54px;
   --f: Onest, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 :root[data-theme="light"] {
@@ -261,6 +261,14 @@ input:focus, select:focus { border-color: var(--blue); }
 .pct { display: inline-block; background: #E5302A; color: #fff; font-weight: 750; font-size: 13.5px; padding: 3px 7px; border-radius: var(--r-sm); font-variant-numeric: tabular-nums; }
 .bar > i { background: var(--pos); }
 
+/* Dolny pasek: niski, tuż przy dole; na iPhonie wchodzi w pole wskaźnika ekranu głównego */
+.tabbar { padding: 2px 6px max(2px, calc(env(safe-area-inset-bottom) - 18px)); }
+.tab { padding: 4px 0 2px; gap: 1px; font-size: 11px; }
+.tab .ic { width: 23px; height: 23px; }
+/* Pasek stanu: treść nie wchodzi pod zegar */
+body::before { content: ""; position: fixed; left: 0; right: 0; top: 0; height: env(safe-area-inset-top); background: var(--canvas); z-index: 15; }
+.offer .hint.meta { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+
 /* Pasek górny */
 .topbar { display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; margin: -6px 0 14px; }
 .topbar .logo { display: flex; align-items: center; justify-content: center; gap: 8px; font-weight: 700; font-size: 21px; letter-spacing: -.02em; }
@@ -348,7 +356,7 @@ body.shop .li .t { font-size: 18px; }
   .tab.wide { display: flex; }
   .topbar { display: none; }
   .deal { flex-basis: 50%; }
-  .tabbar { top: 0; right: auto; bottom: 0; width: 92px; display: flex; flex-direction: column; gap: 4px; padding: calc(env(safe-area-inset-top) + 18px) 8px 18px; border-top: 0; border-right: 1px solid var(--line); }
+  .tabbar { top: 0; right: auto; bottom: 0; width: 92px; display: flex; flex-direction: column; gap: 4px; padding: calc(env(safe-area-inset-top) + 18px) 8px 18px !important; border-top: 0; border-right: 1px solid var(--line); }
   .tab { padding: 10px 0 8px; font-size: 12px; }
   #view { max-width: 860px; margin-left: 92px; padding: calc(env(safe-area-inset-top) + 32px) 36px 56px; }
   @supports (margin-inline: max(0px)) { #view { margin-left: max(92px, calc((100vw - 860px) / 2 + 46px)); } }
@@ -362,7 +370,7 @@ body.shop .li .t { font-size: 18px; }
   .foot-in { max-width: 640px; background: var(--surface); padding: 14px 28px calc(14px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); }
 }
 @media (min-width: 1100px) {
-  .tabbar { width: 232px; padding: calc(env(safe-area-inset-top) + 28px) 14px 18px; }
+  .tabbar { width: 232px; padding: calc(env(safe-area-inset-top) + 28px) 14px 18px !important; }
   .tab { flex-direction: row; justify-content: flex-start; gap: 12px; padding: 10px 12px; font-size: 15px; font-weight: 550; }
   .tab[aria-current="page"] { background: var(--canvas); }
   #view { max-width: 1120px; margin-left: 232px; padding: 40px 48px 64px; }

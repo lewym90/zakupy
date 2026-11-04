@@ -6,10 +6,10 @@ import { norm } from './util.js';
 
 export const CATS = [
   { id: 'ryby', n: 'Ryby', k: ['losos', 'dorsz', 'ryba', 'ryby', 'sledz', 'tunczyk', 'makrel', 'pstrag', 'karp', 'mintaj', 'krewetk', 'sushi'] },
-  { id: 'wedliny', n: 'Wędliny', k: ['kielbas', 'szynk', 'parowk', 'kabanos', 'wedlin', 'salami', 'pasztet', 'kaszank', 'mortadel', 'boczek', 'polędwica sopocka', 'baleron'] },
-  { id: 'mieso', n: 'Mięso i drób', k: ['karkow', 'schab', 'kurczak', 'kurcz', 'mielon', 'wieprz', 'wolow', 'indyk', 'udko', 'udka', 'skrzydl', 'poledwic', 'zeberk', 'lopatk', 'antrykot', 'golonk', 'mieso', 'kaczk', 'cielec', 'pulpet', 'kotlet', 'rostbef', 'zraz', 'piers$'] },
+  { id: 'wedliny', n: 'Wędliny', k: ['kielbas', 'szynk', 'parowk', 'kabanos', 'prosciutto', 'pancetta', 'spianata', 'wedlin', 'salami', 'pasztet', 'kaszank', 'mortadel', 'boczek', 'polędwica sopocka', 'baleron'] },
+  { id: 'mieso', n: 'Mięso i drób', k: ['karkow', 'schab', 'kurczak', 'kurcz', 'mielon', 'wieprz', 'wolow', 'indyk', 'udko', 'udka', 'skrzyd', 'poledwic', 'zeberk', 'lopatk', 'antrykot', 'golonk', 'mieso', 'kaczk', 'cielec', 'pulpet', 'kotlet', 'rostbef', 'zraz', 'piers$'] },
   { id: 'nabial', n: 'Nabiał i jaja', k: ['mleko', 'ser$', 'serek', 'serki', 'jogurt', 'maslo', 'smietan', 'twarog', 'kefir', 'jaja', 'jajka', 'maslank', 'margaryn', 'mozzarell', 'feta', 'skyr', 'serwatk', 'deser mlecz', 'budyn'] },
-  { id: 'warzywa', n: 'Warzywa i owoce', k: ['ziemniak', 'marchew', 'cebul', 'pomidor', 'ogorek', 'ogorki', 'jablk', 'banan', 'salat', 'papryk', 'cytryn', 'pomarancz', 'mandar', 'winogron', 'truskaw', 'brokul', 'kapust', 'por$', 'czosnek', 'burak', 'szpinak', 'grzyb', 'pieczark', 'awokado', 'gruszk', 'kiwi', 'warzyw', 'owoc', 'borowk', 'maliny', 'cukini', 'dynia', 'rzodkiew', 'seler', 'pietruszk', 'koperek'] },
+  { id: 'warzywa', n: 'Warzywa i owoce', k: ['ziemniak', 'marchew', 'cebul', 'pomidor', 'ogorek', 'ogorki', 'jablk', 'banan', 'salat', 'papryk', 'cytryn', 'pomarancz', 'mandar', 'winogron', 'truskaw', 'brokul', 'kapust', 'por$', 'czosnek', 'burak', 'szpinak', 'grzyb', 'pieczark', 'awokado', 'kaki$', 'gruszk', 'kiwi', 'warzyw', 'owoc', 'borowk', 'maliny', 'cukini', 'dynia', 'rzodkiew', 'seler', 'pietruszk', 'koperek'] },
   { id: 'pieczywo', n: 'Pieczywo', k: ['chleb', 'bulk', 'bagiet', 'drozdzowk', 'rogal', 'precel', 'tost', 'pieczyw', 'chalk', 'pączek', 'paczek', 'bulka'] },
   { id: 'mrozonki', n: 'Mrożonki i lody', k: ['mrozon', 'lody', 'lod$', 'pizza', 'frytki', 'pierogi', 'paluszki rybne', 'nuggets'] },
   { id: 'napoje', n: 'Napoje', k: ['woda', 'wody', 'sok$', 'soki$', 'cola', 'pepsi', 'napoj', 'lemoniad', 'nektar', 'izotonik', 'energet', 'oranzad', 'fanta', 'sprite', 'tonik', 'mleko ryzowe', 'kompot'] },
@@ -31,7 +31,7 @@ const prepared = [...CATS].sort((a, b) => ORDER.indexOf(a.id) - ORDER.indexOf(b.
   .map(c => ({ id: c.id, k: c.k.map(k => (k.endsWith('$') ? norm(k) + '$' : norm(k))).filter(Boolean) }));
 
 // Wyjątki sprawdzane przed wszystkim innym.
-const PHRASES = [['woda micelarna', 'chemia'], ['woda toaletowa', 'chemia'], ['woda perfumowana', 'chemia'], ['krem do', 'chemia'], ['maslo orzech', 'spizarnia'], ['maslo shea', 'chemia'],
+const PHRASES = [['platki hydrozel', 'chemia'], ['platki pod oczy', 'chemia'], ['maska do wlosow', 'chemia'], ['mieszanka chinsk', 'mrozonki'], ['mieszanka meksyk', 'mrozonki'], ['napoj jogurt', 'nabial'], ['mieszanka krolewska', 'slodycze'], ['woda micelarna', 'chemia'], ['woda toaletowa', 'chemia'], ['woda perfumowana', 'chemia'], ['krem do', 'chemia'], ['maslo orzech', 'spizarnia'], ['maslo shea', 'chemia'],
   ['mleko kokosowe', 'spizarnia'], ['mleko do ciala', 'chemia'], ['rolada ogrodowa', 'slodycze'], ['rolada biszkopt', 'slodycze'], ['paluszki rybne', 'mrozonki'], ['paluszki krabowe', 'ryby']];
 const MODIFIERS = new Set(['z', 'ze', 'o', 'w', 'we', 'do', 'na', 'dla', 'bez', 'od', 'po']);
 const GENERIC_MEAT = new Set(['filet', 'filety', 'fileciki', 'rolada', 'rolady']); // samo w sobie nic nie mówi: Filet z dorsza to ryba

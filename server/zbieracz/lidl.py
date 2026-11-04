@@ -6,7 +6,7 @@ import re
 
 import gemini
 from gemini import Reader
-from normalize import interpret, make_offer, money
+from normalize import clean_name, interpret, make_offer, money
 
 LIST_URL = 'https://www.lidl.pl/c/nasze-gazetki/s10008614'
 API = 'https://endpoints.leaflets.schwarz/v4/flyer?flyer_identifier={slug}&region_id=0&region_code=0'
@@ -50,7 +50,7 @@ def get_flyer(ctx, slug):
 def map_item(it, valid_from, valid_to, section='', store='Lidl'):
     """Jedna pozycja dosłownego odczytu -> oferta (albo None). Cała arytmetyka i kontrola jest w normalize.interpret."""
     brand, nazwa = (it.get('marka') or '').strip(), (it.get('nazwa') or '').strip()
-    name = nazwa if brand and nazwa.lower().startswith(brand.lower()) else ' '.join(x for x in [brand, nazwa] if x)
+    name = clean_name(brand, nazwa, store)
     if not name:
         return None
     pack_t, extra, unit_t = [str(it.get(k) or '').strip() for k in ('opakowanie', 'cena_dodatkowa', 'cena_jednostkowa')]

@@ -9,7 +9,7 @@ import { ic } from './icons.js';
 import { COLS, CELLS, slotOf, thumbInfo } from './thumbs.js';
 import { offerCalc, compareGroups, familyOf, offerLabel, UNITS, packLabel, unitPrice, promoLabel, whereLabel, isMulti, isSure, isHidden, flyerUrl, discountPct } from './offers.js';
 
-const VERSION = '0.9.1';
+const VERSION = '0.9.2';
 const LISTS = ['lista', 'stale', 'chce', 'spiz'];
 const NOW_YM = () => todayISO().slice(0, 7);
 const S = { receipts: [], offers: [], kv: {}, tab: 'start', omode: 'lista', ym: NOW_YM(), q: '', cat: '', ocat: '', lastStore: 'Biedronka', srv: null, oq: '', ounsure: false, lstore: '', lmode: 'zakupy', ostore: '', lshop: false };
@@ -82,7 +82,7 @@ const SCREENS = { start, paragony, cennik, okazje, lista, budzet, ustawienia, sp
 
 const pr = (g, tag) => `<span class="pr${tag ? ' tagp' : ''}">${zl(g)}</span>`;
 const thumb = o => {
-  const i = slotOf(o.name, o.cat), c = i % CELLS, step = 100 / (COLS - 1);
+  const i = o.thumb ?? slotOf(o.name, o.cat), c = i % CELLS, step = 100 / (COLS - 1);
   return `<span class="th" style="background-image:url(img/p${Math.floor(i / CELLS) + 1}.webp);background-position:${(c % COLS) * step}% ${Math.floor(c / COLS) * step}%"></span>`;
 };
 const storeMark = s => `<span class="sb ${esc(s)}" aria-hidden="true">${esc(s[0])}</span>`;
@@ -168,7 +168,7 @@ const prods = () => S._p || (S._p = products(S.receipts));
 function offerVerdict(o) { const c = offerCalc(o); return verdict(c.up, c.base, matchProduct(prods(), o.name)); }
 // Oferty własne + oferty z serwera (tylko do odczytu, id z prefiksem "s:")
 let _ao = { m: null, s: null, f: null, v: [] };
-const offerCat = o => S.kv.catFix[norm(o.name)] || catOfOffer(o.name, o.section); // ręczna poprawka właściciela ma pierwszeństwo
+const offerCat = o => S.kv.catFix[norm(o.name)] || o.aiCat || catOfOffer(o.name, o.section); // ręczna poprawka właściciela ma pierwszeństwo
 function allOffers() {
   const sv = S.srv && S.srv.data && Array.isArray(S.srv.data.offers) ? S.srv.data.offers : null;
   if (_ao.m !== S.offers || _ao.s !== sv || _ao.f !== S.kv.catFix) _ao = { m: S.offers, s: sv, f: S.kv.catFix, v: [...S.offers, ...(sv || []).map(o => ({ ...o, id: 's:' + o.id, cat: offerCat(o), srv: true }))] };
@@ -206,7 +206,7 @@ function offerCard(o, v) {
   return `<div class="ofw">${offerBody(o, v)}${addBtn(o)}</div>`;
 }
 function offerBody(o, v) {
-  const c = offerCalc(o), multi = isMulti(o), hid = isHidden(o), meta = `<span class="hint">${esc(o.store)}, do ${fmtDate(o.until)}${o.cond ? ', ' + esc(o.cond) : ''}</span>`, p = discountPct(o);
+  const c = offerCalc(o), multi = isMulti(o), hid = isHidden(o), meta = `<span class="hint meta">${esc(o.store)}, do ${fmtDate(o.until)}${o.cond ? ', ' + esc(o.cond) : ''}</span>`, p = discountPct(o);
   if (!isSure(o)) return `<button class="offer${hid ? ' unsure' : ''}" data-act="offer" data-id="${o.id}">${thumb(o)}
     <span class="mid"><span class="t">${esc(o.name)}</span>${meta}
       ${o.printed ? `<span class="hint">${hid ? 'Na gazetce' : 'W sklepie'}: ${esc(o.printed)}</span>` : ''}${whereLine(o)}${promoPill(o)}<span class="pill nodata">${hid ? 'odczyt niepewny' : 'bez ceny za jednostkę'}</span></span>
@@ -380,7 +380,7 @@ function srvStores() {
 }
 function srvThumbs() {
   const off = allOffers().filter(o => o.srv); if (!off.length) return '';
-  const miss = off.filter(o => !thumbInfo(o.name, o.cat).exact);
+  const miss = off.filter(o => o.thumb == null && !thumbInfo(o.name, o.cat).exact);
   return `<h2>Zdjęcia ofert</h2><div class="card"><div class="kv"><span>Własne zdjęcie produktu</span><b>${off.length - miss.length} z ${off.length}</b></div>${miss.length ? `<p class="hint" id="thumbmiss" style="margin:8px 0 0;user-select:text">Grafika ogólna: ${esc(miss.slice(0, 60).map(o => o.name.slice(0, 28)).join('; '))}</p>` : ''}</div>`;
 }
 function ustawienia() {
