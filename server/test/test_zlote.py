@@ -112,6 +112,42 @@ class PrawdziwyOdczyt(unittest.TestCase):
         self.assertEqual(m(marka='Pepsi', nazwa='Pepsi Zero', opakowanie='2 L', cena='5,00', cena_jednostkowa='1 L = 2,50')['name'], 'Pepsi Zero')
 
 
+class Biedronka(unittest.TestCase):
+    """Dokładnie tak Gemini przepisało oferty z gazetki Biedronki."""
+
+    def test_grosze_sklejone(self):
+        o = m(nazwa='Ariel Płyn', opakowanie='50 prań, 2,250 l', cena='3699', cena_dodatkowa='Cena za 1 szt.: 49,99 22,22/l', cena_jednostkowa='16,44 zł/l')
+        self.assertEqual((o['price'], o['conf']), (3699, 'ok'))
+        o = m(nazwa='Aura Płyn', opakowanie='4 l', cena='1299', cena_dodatkowa='Cena za 1 szt.: 19,99 5,00/l', cena_jednostkowa='3,25 zł/l')
+        self.assertEqual((o['price'], o['conf'], up(o)), (1299, 'ok', 325))
+        o = m(nazwa='Sushi Nori', opakowanie='16 g', cena='399', cena_dodatkowa='Cena za 1 szt.: 5,99 374,38/kg', cena_jednostkowa='249,38 zł/kg')
+        self.assertEqual((o['price'], o['conf']), (399, 'ok'))
+
+    def test_cena_rozbita_na_dwa_pola(self):
+        o = m(nazwa='Baitz Baton kokosowy', opakowanie='50 g', cena='1', cena_dodatkowa='79', cena_jednostkowa='35,80 zł/kg')
+        self.assertEqual((o['price'], o['conf']), (179, 'ok'))
+        o = m(nazwa='Baitz Rogaliki', opakowanie='5x48 g', cena='4', cena_dodatkowa='99', cena_jednostkowa='20,79 zł/kg')
+        self.assertEqual((o['price'], o['conf'], o['amount'], o['unit']), (499, 'ok', 240.0, 'g'))
+
+    def test_ilosc_z_ceny_jednostkowej(self):
+        o = m(nazwa='Almette Wszystkie puszyste', cena='6,49', cena_jednostkowa='43,27 zł/kg')
+        self.assertEqual((o['conf'], o['amount'], o['unit']), ('ok', 150.0, 'g'))
+
+    def test_cena_zwykla_i_promocyjna(self):
+        o = m(nazwa='Activ Pet Karma', opakowanie='4x100 g', cena='4,00', cena_dodatkowa='Cena za 1 opak.: 5,99 14,98/kg')
+        self.assertEqual((o['price'], o['conf'], o['amount'], o['need']), (400, 'ok', 400.0, 1))
+
+    def test_rozne_wielkosci(self):
+        o = m(nazwa='Always', opakowanie='10-20 szt.', cena='9,99', cena_dodatkowa='Cena za 1 opak.: 14,49 1,45-0,72/szt.', cena_jednostkowa='1,00-0,50 zł/szt')
+        self.assertEqual((o['price'], o['conf']), (999, 'cena'))
+
+    def test_cena_za_sztuke_nie_przeslania_ceny_za_100_g(self):
+        o = m(nazwa='Bułka poznańska', opakowanie='95 g', cena='0,79', cena_dodatkowa='0,90 100 g = 0,83 Cena przed obniżką/cena poza promocją: 0,90/szt.')
+        self.assertEqual(o['conf'], 'ok')
+        o = m(nazwa='Chleb górski', opakowanie='375 g', cena='3,69', cena_dodatkowa='4,49 1 kg = 9,84 Cena przed obniżką: 4,49/szt.')
+        self.assertEqual(o['conf'], 'ok')
+
+
 class PomylkiModelu(unittest.TestCase):
     """Te same oferty, ale model przepisał je gorzej. Wynik ma być poprawny albo oznaczony jako niepewny, nigdy błędny i pewny."""
 

@@ -8,6 +8,8 @@ import subprocess
 
 P = re.compile(r'cola|pepsi|żywiec|zywiec|mirinda|7up', re.I)
 run = lambda *a: subprocess.run(a, capture_output=True, text=True).stdout
+_k = re.search(r"KOD = '([^']+)'", open('/opt/zakupy-zbieracz/zbieracz/normalize.py', encoding='utf-8').read())
+print('wersja kodu na serwerze:', _k.group(1) if _k else 'STARA')
 print('stan:', run('systemctl', 'is-active', 'zakupy-zbieracz').strip(), '| kod z Biedronką:', 'tak' if os.path.exists('/opt/zakupy-zbieracz/zbieracz/biedronka.py') else 'NIE')
 log = run('journalctl', '-u', 'zakupy-zbieracz', '--since', 'today', '--no-pager').splitlines()
 print('przeczytane strony dziś:', sum(1 for x in log if re.search(r' str\. \d+: \d+ ofert$', x)))

@@ -4,6 +4,7 @@ import datetime as dt
 import hashlib
 import re
 
+KOD = '2026-11-05c'  # znacznik wersji: raport i instalacja go pokazują
 NUM = r'(\d+(?:[.,]\d+)?)'
 TO_BASE = {'g': ('kg', 0.001), 'kg': ('kg', 1.0), 'ml': ('l', 0.001), 'l': ('l', 1.0), 'szt': ('szt', 1.0)}
 
@@ -207,16 +208,21 @@ def parse_anchor(text):
     k = _KAUCJA_RE.search(t)
     deposit = int(round(fnum(k.group(1)) * 100)) if k else None
     t = _KAUCJA_RE.sub(' ', t).replace('zł', ' ').replace('zl', ' ').replace('pln', ' ')
-    m = re.search(NUM + r'\s*/\s*' + NUM + r'?\s*(kg|g|ml|l|szt)\b', t)  # 4,99/1 l
-    if m and re.search(r'/\s*\d*\s*(kg|g|ml|l|szt)\b', t):
-        price, n, u = fnum(m.group(1)), fnum(m.group(2)) if m.group(2) else 1.0, m.group(3)
-    else:
-        if re.search(r'\d\s*/\s*\d|\d[.,]\d{2}\s*-\s*\d', t):
-            return None  # kilka wariantów (31,96/34,74); „10,15/but.” to zwykła cena sztuki
-        m = re.search(NUM + r'?\s*(kg|g|ml|l|szt)\b\.?\s*=?\s*' + NUM, t)
-        if not m:
-            return None
+    if re.search(r'\d[.,]\d{2}\s*[/-]\s*\d+[.,]\d', t):
+        return None  # kilka wariantów (31,96/34,74); „10,15/but.” i „4,99/1 l” to zwykłe ceny
+    m = re.search(NUM + r'?\s*(kg|g|ml|l|szt)\b\.?\s*=\s*' + NUM, t)  # 1 kg = 9,84
+    if m:
         n, u, price = fnum(m.group(1)) if m.group(1) else 1.0, m.group(2), fnum(m.group(3))
+    else:
+        ms = list(re.finditer(NUM + r'\s*/\s*' + NUM + r'?\s*(kg|g|ml|l|szt)\b', t))  # 16,44/l; ostatni to cena promocyjna
+        if ms:
+            m = ms[-1]
+            price, n, u = fnum(m.group(1)), fnum(m.group(2)) if m.group(2) else 1.0, m.group(3)
+        else:
+            m = re.search(NUM + r'?\s*(kg|g|ml|l|szt)\b\.?\s+' + NUM + r'\s*$', t)  # 1 kg 19,98
+            if not m:
+                return None
+            n, u, price = fnum(m.group(1)) if m.group(1) else 1.0, m.group(2), fnum(m.group(3))
     b, f = TO_BASE[u]
     return dict(base=b, up=price * 100 / (n * f), deposit=deposit)
 
@@ -225,11 +231,15 @@ def variants_match(price, pack_text, unit_text):
     """Kilka wielkości w jednej cenie: '50 g, 55 g' i '100 g = 13,98/12,71'. Prawda, gdy wydrukowana cena zgadza się z którąś wielkością."""
     t = _KAUCJA_RE.sub(' ', (unit_text or '').lower().replace('zł', ' '))
     m = re.search(NUM + r'?\s*(kg|g|ml|l|szt)\b\.?\s*=?\s*(\d+[.,]\d{2}(?:\s*[/-]\s*\d+[.,]\d{2})+)', t)
-    if not m:
-        return False
-    n, u = fnum(m.group(1)) if m.group(1) else 1.0, m.group(2)
+    if m:
+        n, u, txt = fnum(m.group(1)) if m.group(1) else 1.0, m.group(2), m.group(3)
+    else:
+        m = re.search(r'(\d+[.,]\d{2}(?:\s*[/-]\s*\d+[.,]\d{2})+)\s*/\s*(kg|g|ml|l|szt)\b', t)  # 1,00-0,50/szt
+        if not m:
+            return False
+        n, u, txt = 1.0, m.group(2), m.group(1)
     b, f = TO_BASE[u]
-    ups = [fnum(x) * 100 / (n * f) for x in re.findall(r'\d+[.,]\d{2}', m.group(3))]
+    ups = [fnum(x) * 100 / (n * f) for x in re.findall(r'\d+[.,]\d{2}', txt)]
     sizes = []
     for a, a2, un in re.findall(NUM + r'(?:\s*[/-]\s*' + NUM + r')?\s*(kg|g|ml|l|szt)\b', (pack_text or '').lower()):
         for x in (a, a2):
@@ -273,6 +283,10 @@ def interpret(name, pack_text, price, extra='', unit_text='', deposit='', promo=
     Gdy nic się nie zgadza, nie wolno podać liczb pochodnych: wynik to zwykła cena z conf='check'.
     Zwraca None, gdy nie ma ceny."""
     price = glued(price)
+    ps, ex = str(price if price is not None else '').strip(), str(extra or '').strip()
+    m0 = re.match(r'(\d{2})(?!\d|[.,])', ex)
+    if re.fullmatch(r'\d{1,3}', ps) and m0:  # model rozdzielił cenę: „4” i małe „99”
+        price, extra = f'{ps},{m0.group(1)}', ex[2:]
     line = _line(price, extra)
     prs = _prices(price)
     big = max(prs) if prs else money(price)
@@ -292,6 +306,12 @@ def interpret(name, pack_text, price, extra='', unit_text='', deposit='', promo=
     parts = parse_pack_parts(pack_text) or parse_pack_parts(name)
     if not parts and anchor and _near(big, anchor['up']):  # towar na wagę: cena za 1 kg / 1 l
         parts = dict(count=1, each=1.0, unit={'kg': 'kg', 'l': 'l', 'szt': 'szt'}[anchor['base']], conf='ok', note='', word='')
+    if not parts and anchor and not parse_multibuy(promo or '') and anchor['base'] in ('kg', 'l'):
+        q0 = big / anchor['up']  # 6,49 przy 43,27 zł/kg to 150 g
+        if 0.02 <= q0 <= 10:
+            a0 = round(q0 * 1000 / 5) * 5
+            if a0 and _near(big / (a0 / 1000), anchor['up']):
+                parts = dict(count=1, each=float(a0), unit='g' if anchor['base'] == 'kg' else 'ml', conf='ok', note='', word='')
     if not parts:
         return dict(amount=1.0, unit='szt', price=big, mode='unit', need=1, conf='check', note='nie rozpoznano opakowania', deposit=dep, promo=(promo or '').strip()[:40])
     count, each, unit = parts['count'], parts['each'], parts['unit']
@@ -338,6 +358,8 @@ def interpret(name, pack_text, price, extra='', unit_text='', deposit='', promo=
         chosen = next((h for h in hyps if any(_near(v, anchor['up']) for v in h['tests'])), None)
         if not chosen and exact and not mb and big < anchor['up'] and big >= anchor['up'] * .3:  # 1 kg: wydrukowana cena jednostkowa to cena sprzed obniżki
             chosen = hyps[0]
+        if not chosen and not mb and any(big < x and _near(x / (q * f), anchor['up']) for x in _prices(extra)):  # „Cena za 1 opak.: 5,99 14,98/kg” opisuje cenę zwykłą
+            chosen = next((h for h in hyps if h['need'] == 1), hyps[0])
         if not chosen:
             note = f"cena za jednostkę wg sklepu {anchor['up'] / 100:.2f}, odczyt jej nie potwierdza"
     elif line and _near(line[0] * line[1], big, 0.002):  # brak ceny jednostkowej, ale druk zgadza się sam ze sobą: 2 x 4,99 = 9,98

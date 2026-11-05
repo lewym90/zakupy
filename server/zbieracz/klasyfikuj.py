@@ -58,6 +58,6 @@ def classify(offers, state_dir, key, log=print, reader=None, max_batches=12):
         if v:
             o['thumb'], o['aiCat'] = v
             n += 1
-    offers[:] = [o for o in offers if o.get('aiCat') != SKIP and not (o.get('thumb') == len(LABELS) - 1 and o.get('aiCat') == 'inne')]
+    offers[:] = [o for o in offers if o.get('aiCat') != SKIP and o.get('thumb') != len(LABELS) - 1]  # kosz: nic nie pasuje, czyli nie są to zakupy domowe
     log('Dobór grafik:', n, 'pozostało', len(offers), 'ofert')
     return n

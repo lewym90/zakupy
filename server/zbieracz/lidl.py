@@ -18,7 +18,7 @@ PROMPT = """Jesteś czytnikiem tekstu (OCR). Przepisz ze zdjęcia strony gazetki
 {"oferty":[""" + FIELDS + """]}
 Zasady: przepisuj znak w znak to, co jest WYDRUKOWANE. Niczego nie licz, nie mnóż, nie przeliczaj, nie zgaduj i nie poprawiaj. Czego nie ma na stronie, to null. Każde pole to tekst z danego bloku oferty:
 "opakowanie" = napis o ilości w całości, razem ze słowem takim jak Dwusztuk, np. "Dwusztuk 2 x 1 L", "500 g".
-"cena" = największa wydrukowana cena oferty z przecinkiem, np. "9,98"; małe cyfry przy dużej cenie to grosze: duże 7 i małe 99 zapisz "7,99".
+"cena" = największa wydrukowana cena oferty z przecinkiem, np. "9,98"; małe cyfry przy dużej cenie to grosze: duże 7 i małe 99 zapisz "7,99", nigdy osobno.
 "cena_dodatkowa" = pozostałe wydrukowane ceny bloku, np. "2 x 4,99 zł za butelkę", "cena poza promocją 10,15 zł/but.".
 "cena_przed" = cena przekreślona lub sprzed obniżki.
 "cena_jednostkowa" = napis ceny za kg/l/szt bez kaucji, np. "1 L = 4,99".
