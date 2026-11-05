@@ -8,6 +8,7 @@ import gemini
 
 LABELS = json.load(open(os.path.join(os.path.dirname(__file__), 'produkty.json'), encoding='utf-8'))
 CATS = ['ryby', 'wedliny', 'mieso', 'nabial', 'warzywa', 'pieczywo', 'mrozonki', 'napoje', 'kawa', 'alkohol', 'slodycze', 'spizarnia', 'chemia', 'zwierzeta', 'inne']
+SKIP = 'pomin'  # odzież, zabawki, narzędzia, meble: nie są zakupami domowymi
 BATCH = 120
 
 
@@ -20,7 +21,7 @@ def prompt(names):
             + '\n'.join(f'{i}: {x}' for i, x in enumerate(LABELS))
             + '\n\nDla każdej nazwy wybierz obrazek przedstawiający ten sam rodzaj produktu i kategorię z listy: ' + ', '.join(CATS) + '.\n'
             'Patrz na to, czym produkt jest, a nie na pojedyncze słowa. Płatki hydrożelowe pod oczy to kosmetyk, a nie płatki śniadaniowe; mrożona mieszanka chińska to mrożonka; prosciutto to wędlina; marka nic nie znaczy. '
-            'Gdy nic nie pasuje, wybierz najbliższy rodzaj; ostatni numer to kosz z zakupami, użyj go tylko w ostateczności.\n'
+            f'Odzież, buty, zabawki, narzędzia, meble, sprzęt i dekoracje dostają kategorię "{SKIP}". Gdy nic nie pasuje, wybierz najbliższy rodzaj; ostatni numer to kosz z zakupami, użyj go tylko w ostateczności.\n'
             'Zwróć wyłącznie JSON: {"w":[{"i":numer_nazwy,"g":numer_obrazka,"k":"kategoria"}]}\nNazwy:\n'
             + '\n'.join(f'{i}: {n}' for i, n in enumerate(names)))
 
@@ -45,7 +46,7 @@ def classify(offers, state_dir, key, log=print, reader=None, max_batches=12):
                 if not isinstance(x, dict):
                     continue
                 i, g, k = x.get('i'), x.get('g'), x.get('k')
-                if isinstance(i, int) and 0 <= i < len(names) and isinstance(g, int) and 0 <= g < len(LABELS) and k in CATS:
+                if isinstance(i, int) and 0 <= i < len(names) and isinstance(g, int) and 0 <= g < len(LABELS) and (k in CATS or k == SKIP):
                     known[key_of(names[i])] = [g, k]
             tmp = path + '.tmp'
             with open(tmp, 'w', encoding='utf-8') as f:
@@ -57,5 +58,6 @@ def classify(offers, state_dir, key, log=print, reader=None, max_batches=12):
         if v:
             o['thumb'], o['aiCat'] = v
             n += 1
-    log('Dobór grafik:', n, 'z', len(offers), 'ofert')
+    offers[:] = [o for o in offers if o.get('aiCat') != SKIP and not (o.get('thumb') == len(LABELS) - 1 and o.get('aiCat') == 'inne')]
+    log('Dobór grafik:', n, 'pozostało', len(offers), 'ofert')
     return n

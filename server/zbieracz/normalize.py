@@ -253,6 +253,12 @@ def _line(*texts):
     return None
 
 
+def glued(text):
+    """Grosze w indeksie górnym: odczyt '799' to 7,99 zł, nie 799 zł. Bez przecinka 3-4 cyfry traktujemy jako grosze."""
+    t = str(text if text is not None else '').replace('zł', '').replace(' ', '').strip()
+    return f'{int(t) / 100:.2f}'.replace('.', ',') if re.fullmatch(r'\d{3,4}', t) else text
+
+
 def _near(a, b, tol=TOL):
     return b > 0 and abs(a - b) / b <= tol
 
@@ -266,6 +272,7 @@ def interpret(name, pack_text, price, extra='', unit_text='', deposit='', promo=
     Układamy możliwe odczytania i wybieramy to, które zgadza się z ceną jednostkową WYDRUKOWANĄ w gazetce.
     Gdy nic się nie zgadza, nie wolno podać liczb pochodnych: wynik to zwykła cena z conf='check'.
     Zwraca None, gdy nie ma ceny."""
+    price = glued(price)
     line = _line(price, extra)
     prs = _prices(price)
     big = max(prs) if prs else money(price)
@@ -273,6 +280,8 @@ def interpret(name, pack_text, price, extra='', unit_text='', deposit='', promo=
         big = line[0] * line[1]
     if not big or big <= 0:
         return None
+    if big >= 30000:  # 300 zł w ofercie spożywczej to prawie na pewno zły odczyt: tylko niepewna, bez przeliczeń
+        return dict(amount=1.0, unit='szt', price=big, mode='unit', need=1, conf='check', note='nieprawdopodobna cena', deposit=0, promo='')
     anchor = parse_anchor(unit_text) or parse_anchor(extra)
     dep = money(deposit) if deposit else None
     if dep is None and anchor:
@@ -321,20 +330,19 @@ def interpret(name, pack_text, price, extra='', unit_text='', deposit='', promo=
     chosen, note = None, ''
     # 1 kg, 1 l, 100 g, 1 szt.: gazetka nie drukuje osobnej ceny jednostkowej, bo jest nią sama cena i nie ma czego mnożyć
     exact = count == 1 and not line and (unit, each) in {('kg', 1), ('l', 1), ('g', 1000), ('ml', 1000), ('g', 100), ('ml', 100), ('szt', 1)}
-    regular_note = re.search(r'przed obniżką|poza promocją', f'{extra} {unit_text}', re.I)
     if not anchor and not mb and (variants_match(big, pack_text, unit_text) or variants_match(big, pack_text, extra)):
         return dict(amount=q, unit=unit, price=big, mode='unit', need=1, conf='cena', note='kilka wariantów wielkości w tej samej cenie, więc cena za jednostkę zależy od wariantu', deposit=dep, promo='')
     if parts['conf'] != 'ok':
         note = parts['note']
     elif anchor and anchor['base'] == base:
         chosen = next((h for h in hyps if any(_near(v, anchor['up']) for v in h['tests'])), None)
-        if not chosen and exact and not mb and regular_note and big < anchor['up']:  # wydrukowana cena jednostkowa to cena sprzed obniżki
+        if not chosen and exact and not mb and big < anchor['up'] and big >= anchor['up'] * .3:  # 1 kg: wydrukowana cena jednostkowa to cena sprzed obniżki
             chosen = hyps[0]
         if not chosen:
             note = f"cena za jednostkę wg sklepu {anchor['up'] / 100:.2f}, odczyt jej nie potwierdza"
     elif line and _near(line[0] * line[1], big, 0.002):  # brak ceny jednostkowej, ale druk zgadza się sam ze sobą: 2 x 4,99 = 9,98
         chosen = next((h for h in hyps if h['need'] == line[0] and h['total'] == big), None)
-    elif exact and not anchor:
+    elif exact:  # brak ceny jednostkowej albo dotyczy innej jednostki („2,49/szt.” przy 100 g)
         chosen = hyps[0]
     if not chosen and not note:
         note = 'brak ceny jednostkowej, by potwierdzić odczyt'

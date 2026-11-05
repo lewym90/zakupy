@@ -34,3 +34,8 @@ for o in [o for o in B if o['conf'] == 'ok'][:8]:
     print(' ', o['name'][:30], f"{o['need']}x{o['amount']}{o['unit']}", o['price'], o.get('promo', ''), 'do', o['until'], 'str', o.get('page'))
 print('dobrane grafiki:', sum('thumb' in o for o in d['offers']), 'z', len(d['offers']))
 print('kosz z zakupami:', [o['name'][:30] for o in d['offers'] if o.get('thumb') == 383][:12])
+for n, v in collections.Counter(re.sub(r'[0-9.,]+', '#', o.get('note', ''))[:60] for o in B if o['conf'] == 'check').most_common(6):
+    print(f'  {v} {n}')
+for o in [o for o in B if o['conf'] == 'check'][:14]:
+    print(' ', o['name'][:24], o['price'], '|', ' '.join(o.get('printed', '').split())[:64])
+print('ceny od 100 zł:', [(o['name'][:26], o['price'], o['conf']) for o in d['offers'] if o['price'] >= 10000][:10])

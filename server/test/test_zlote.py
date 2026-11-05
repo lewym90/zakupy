@@ -73,10 +73,25 @@ class PrawdziwyOdczyt(unittest.TestCase):
         self.assertEqual((o['conf'], o['need'], o['pay'], o['price']), ('ok', 3, 2, 898))
         self.assertEqual(m(nazwa='Ogórek', opakowanie='1 szt.', cena='2,39')['conf'], 'ok')
 
+    def test_grosze_w_indeksie_gornym(self):
+        o = m(nazwa='Barilla Makaron spaghetti', opakowanie='1 kg', cena='799')
+        self.assertEqual((o['price'], o['conf']), (799, 'ok'))
+        o = m(nazwa='Makaron', opakowanie='500 g', cena='399', cena_jednostkowa='1 kg = 7,98', cena_przed='599')
+        self.assertEqual((o['price'], o['conf'], o['old']), (399, 'ok', 599))
+        self.assertEqual(m(nazwa='X', opakowanie='1 kg', cena=799)['price'], 799)
+
+    def test_bezpiecznik_ceny(self):
+        o = m(nazwa='X', opakowanie='1 kg', cena='799,00')
+        self.assertEqual((o['conf'], o['note']), ('check', 'nieprawdopodobna cena'))
+
+    def test_cena_za_sztuke_przy_100_g(self):
+        self.assertEqual(m(nazwa='Bułka', opakowanie='100 g', cena='1,73', cena_dodatkowa='cena przed obniżką: 2,49/szt.')['conf'], 'ok')
+
     def test_cena_jednostkowa_sprzed_obnizki(self):
         o = m(nazwa='Cytryny, luzem', opakowanie='1 kg', cena='4,99', cena_dodatkowa='* cena przed obniżką: 1 kg = 11,99', cena_jednostkowa='1 kg = 11,99')
         self.assertEqual((o['conf'], up(o)), ('ok', 499))
-        self.assertEqual(m(nazwa='X', opakowanie='1 kg', cena='4,99', cena_jednostkowa='1 kg = 11,99')['conf'], 'check')  # bez takiego napisu to niezgodność
+        self.assertEqual(m(nazwa='X', opakowanie='1 kg', cena='4,99', cena_jednostkowa='1 kg = 7,99')['conf'], 'ok')  # gruszki: cena jednostkowa sprzed obniżki
+        self.assertEqual(m(nazwa='X', opakowanie='1 kg', cena='1,99', cena_jednostkowa='1 kg = 11,99')['conf'], 'check')  # zbyt duża różnica: niezgodność
 
     def test_przypis_ze_skosnikiem_nie_psuje_ceny(self):
         o = m(nazwa='Alpro Napój', opakowanie='750 ml', cena='7,99', cena_jednostkowa='1 L = 10,65\n* najniższa cena\nz 30 dni przed obniżką/')

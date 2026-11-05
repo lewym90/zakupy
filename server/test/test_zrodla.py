@@ -215,6 +215,15 @@ class Porzadek(unittest.TestCase):
         k.classify([{'name': 'A'}], d, 'K', lambda *a: None, reader=R())
         self.assertEqual(len(calls), 1)  # znana nazwa nie kosztuje zapytania
 
+    def test_rzeczy_spoza_zakupow_odpadaja(self):
+        import klasyfikuj as k
+        class R:
+            def read_json(s, imgs, prompt):
+                return {'w': [{'i': 0, 'g': 5, 'k': 'pomin'}, {'i': 1, 'g': 7, 'k': 'nabial'}, {'i': 2, 'g': 383, 'k': 'inne'}]}
+        offers = [{'name': 'A piżama'}, {'name': 'B ser'}, {'name': 'C coś'}]
+        k.classify(offers, tempfile.mkdtemp(), 'K', lambda *a: None, reader=R())
+        self.assertEqual([o['name'] for o in offers], ['B ser'])
+
 
 class Promocje(unittest.TestCase):
     def test_parse_multibuy(self):
